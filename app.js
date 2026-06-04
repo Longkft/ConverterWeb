@@ -23,7 +23,7 @@ const NETWORKS = [
     { id: 'inmobi', name: 'InMobi', abb: 'IM', zip: false },
     { id: 'snapchat', name: 'Snapchat', abb: 'SC', zip: false },
     { id: 'youappi', name: 'YouAppi', abb: 'YA', zip: false }
-];
+]; //
 
 const elements = {
     gameName: document.getElementById('gameName'),
