@@ -91,7 +91,7 @@ function AnimatedHeading({ text }) {
   
   return (
     <h1 
-      className="text-4xl md:text-5xl lg:text-6xl xl:text-7xl font-normal text-white mb-4 leading-tight text-center" 
+      className="text-3xl sm:text-4xl md:text-5xl lg:text-6xl xl:text-7xl font-normal text-white mb-4 leading-tight text-center" 
       style={{ letterSpacing: '-0.04em' }}
     >
       {lines.map((line, lineIndex) => {
@@ -808,13 +808,13 @@ export default function Home() {
 
           {/* Action Buttons */}
           <FadeIn delay={1200} duration={1000}>
-            <div className="flex flex-col sm:flex-row justify-center items-center gap-4 pt-4 w-full max-w-md mx-auto">
+            <div className="flex flex-col sm:flex-row justify-center items-center gap-4 pt-4 w-full max-w-lg mx-auto">
               <button 
                 onClick={() => {
                   setIsBatchMode(false);
                   setIsModalOpen(true);
                 }}
-                className="w-full sm:w-auto bg-white text-black px-8 py-3 rounded-lg font-medium hover:bg-gray-100 transition-colors cursor-pointer text-sm md:text-base whitespace-nowrap"
+                className="w-full sm:w-auto bg-white text-black px-6 sm:px-8 py-3 rounded-lg font-medium hover:bg-gray-100 transition-colors cursor-pointer text-xs sm:text-sm md:text-base"
               >
                 Single File Converter
               </button>
@@ -823,7 +823,7 @@ export default function Home() {
                   setIsBatchMode(true);
                   setIsModalOpen(true);
                 }}
-                className="w-full sm:w-auto liquid-glass border border-white/20 text-white px-8 py-3 rounded-lg font-medium hover:bg-white hover:text-black transition-all cursor-pointer text-sm md:text-base whitespace-nowrap"
+                className="w-full sm:w-auto liquid-glass border border-white/20 text-white px-6 sm:px-8 py-3 rounded-lg font-medium hover:bg-white hover:text-black transition-all cursor-pointer text-xs sm:text-sm md:text-base"
               >
                 Batch Converter (Keep Names)
               </button>
