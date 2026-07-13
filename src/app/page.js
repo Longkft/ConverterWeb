@@ -108,6 +108,8 @@ export default function Home() {
   const [isGlobalDragging, setIsGlobalDragging] = useState(false);
   const [newsletterEmail, setNewsletterEmail] = useState('');
   const [subscribed, setSubscribed] = useState(false);
+  const [isBatchMode, setIsBatchMode] = useState(false);
+  const [uploadedFilesList, setUploadedFilesList] = useState([]);
 
   // --- REFS ---
   const fileInputRef = useRef(null);
@@ -212,13 +214,21 @@ export default function Home() {
     e.preventDefault();
     setIsDragging(false);
     if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
-      processFile(e.dataTransfer.files[0]);
+      if (isBatchMode) {
+        processMultipleFiles(e.dataTransfer.files);
+      } else {
+        processFile(e.dataTransfer.files[0]);
+      }
     }
   };
 
   const handleFileChange = (e) => {
     if (e.target.files && e.target.files.length > 0) {
-      processFile(e.target.files[0]);
+      if (isBatchMode) {
+        processMultipleFiles(e.target.files);
+      } else {
+        processFile(e.target.files[0]);
+      }
     }
   };
 
@@ -239,6 +249,32 @@ export default function Home() {
     reader.readAsText(file);
   };
 
+  const processMultipleFiles = async (files) => {
+    const newFiles = [];
+    const promises = Array.from(files).map(file => {
+      if (!file.name.toLowerCase().endsWith('.html')) {
+        return Promise.resolve();
+      }
+      return new Promise(resolve => {
+        const reader = new FileReader();
+        reader.onload = (e) => {
+          newFiles.push({
+            name: file.name,
+            size: (file.size / 1024 / 1024).toFixed(2),
+            content: e.target.result
+          });
+          resolve();
+        };
+        reader.readAsText(file);
+      });
+    });
+    await Promise.all(promises);
+    if (newFiles.length > 0) {
+      setUploadedFilesList(prev => [...prev, ...newFiles]);
+      addLog(`Added ${newFiles.length} file(s) for batch processing.`);
+    }
+  };
+
   // --- GLOBAL DRAG AND DROP (FOR USER EXPERIENCE) ---
   const handleGlobalDragOver = (e) => {
     e.preventDefault();
@@ -253,12 +289,20 @@ export default function Home() {
     e.preventDefault();
     setIsGlobalDragging(false);
     if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
-      const file = e.dataTransfer.files[0];
-      if (file.name.toLowerCase().endsWith('.html')) {
-        setIsModalOpen(true);
-        processFile(file);
+      const files = e.dataTransfer.files;
+      const htmlFiles = Array.from(files).filter(f => f.name.toLowerCase().endsWith('.html'));
+      if (htmlFiles.length === 0) {
+        alert('Please drop valid HTML files.');
+        return;
+      }
+      
+      setIsModalOpen(true);
+      if (htmlFiles.length > 1) {
+        setIsBatchMode(true);
+        processMultipleFiles(htmlFiles);
       } else {
-        alert('Please drop a valid HTML file.');
+        setIsBatchMode(false);
+        processFile(htmlFiles[0]);
       }
     }
   };
@@ -284,7 +328,23 @@ export default function Home() {
   };
 
   const handleConvert = async () => {
-    if (!uploadedHtmlContent) return;
+    let filesToProcess = [];
+    if (isBatchMode) {
+      if (uploadedFilesList.length === 0) {
+        alert('Please upload at least one HTML file!');
+        return;
+      }
+      filesToProcess = uploadedFilesList;
+    } else {
+      if (!uploadedHtmlContent) {
+        alert('Please upload a Luna HTML file!');
+        return;
+      }
+      filesToProcess = [{
+        name: uploadedFileName,
+        content: uploadedHtmlContent
+      }];
+    }
 
     const game = gameName.trim() || 'Game';
     const pa = paName.trim() || 'PA';
@@ -298,155 +358,166 @@ export default function Home() {
     }
 
     setIsConverting(true);
-    addLog(`--- Starting Conversion ---`);
+    addLog(`--- Starting Conversion (Mode: ${isBatchMode ? 'Batch' : 'Single'}) ---`);
     const zip = new JSZip();
     const zipPromises = [];
 
     try {
-      selectedNetworks.forEach(net => {
-        addLog(`Processing ${net.name}...`);
-        let newContent = uploadedHtmlContent;
+      for (const fileItem of filesToProcess) {
+        const fileContent = fileItem.content;
+        const originalBaseName = fileItem.name.replace(/\.[^/.]+$/, "");
 
-        // 0. Remove the Luna Remote Debugging script (console.re wrapper)
-        newContent = newContent.replace(
-          /<script>\(\(\)\s*=>\s*\{\s*let\s+[a-zA-Z_]\s*=\s*window\.insertYourRemoteDebuggingTokenHere[\s\S]*?\}\)\(\)<\/script>/g, 
-          ''
-        );
+        selectedNetworks.forEach(net => {
+          addLog(`Processing ${fileItem.name} for ${net.name}...`);
+          let newContent = fileContent;
 
-        // 0.1 Remove all external tracking, debugging, and CDN URLs (EXCEPT Play Store / App Store links).
-        newContent = newContent.replace(
-          /https?:\/\/(?!(play\.google\.com|itunes\.apple\.com|apps\.apple\.com))[a-zA-Z0-9\.\-\/\?\&\=\_]+/gi, 
-          ''
-        );
+          // 0. Remove the Luna Remote Debugging script (console.re wrapper)
+          newContent = newContent.replace(
+            /<script>\(\(\)\s*=>\s*\{\s*let\s+[a-zA-Z_]\s*=\s*window\.insertYourRemoteDebuggingTokenHere[\s\S]*?\}\)\(\)<\/script>/g, 
+            ''
+          );
 
-        // 0.2 Find and remove the last two <script> tags unconditionally
-        const scriptMatches = newContent.match(/<script[^>]*>[\s\S]*?<\/script>/ig);
-        if (scriptMatches && scriptMatches.length >= 2) {
-          const lastScript = scriptMatches[scriptMatches.length - 1];
-          const secondToLastScript = scriptMatches[scriptMatches.length - 2];
+          // 0.1 Remove all external tracking, debugging, and CDN URLs (EXCEPT Play Store / App Store links).
+          newContent = newContent.replace(
+            /https?:\/\/(?!(play\.google\.com|itunes\.apple\.com|apps\.apple\.com))[a-zA-Z0-9\.\-\/\?\&\=\_]+/gi, 
+            ''
+          );
 
-          const lastIdx = newContent.lastIndexOf(lastScript);
-          if (lastIdx !== -1) {
-            newContent = newContent.substring(0, lastIdx) + newContent.substring(lastIdx + lastScript.length);
+          // 0.2 Find and remove the last two <script> tags unconditionally
+          const scriptMatches = newContent.match(/<script[^>]*>[\s\S]*?<\/script>/ig);
+          if (scriptMatches && scriptMatches.length >= 2) {
+            const lastScript = scriptMatches[scriptMatches.length - 1];
+            const secondToLastScript = scriptMatches[scriptMatches.length - 2];
+
+            const lastIdx = newContent.lastIndexOf(lastScript);
+            if (lastIdx !== -1) {
+              newContent = newContent.substring(0, lastIdx) + newContent.substring(lastIdx + lastScript.length);
+            }
+
+            const secondLastIdx = newContent.lastIndexOf(secondToLastScript);
+            if (secondLastIdx !== -1) {
+              newContent = newContent.substring(0, secondLastIdx) + newContent.substring(secondLastIdx + secondToLastScript.length);
+            }
           }
 
-          const secondLastIdx = newContent.lastIndexOf(secondToLastScript);
-          if (secondLastIdx !== -1) {
-            newContent = newContent.substring(0, secondLastIdx) + newContent.substring(secondLastIdx + secondToLastScript.length);
-          }
-        }
+          // 1. Replace targetPlatform
+          newContent = newContent.replace(/targetPlatform:\s*"[^"]+"/g, `targetPlatform:"${net.id}"`);
 
-        // 1. Replace targetPlatform
-        newContent = newContent.replace(/targetPlatform:\s*"[^"]+"/g, `targetPlatform:"${net.id}"`);
+          // 3. Add extra requirements & specific scripts based on network
+          let extraScripts = "";
 
-        // 3. Add extra requirements & specific scripts based on network
-        let extraScripts = "";
-
-        switch (net.id) {
-          // =============== MRAID NETWORKS ===============
-          case 'applovin':
-          case 'ironsource':
-          case 'unityads':
-          case 'adcolony':
-          case 'vungle':
-          case 'aarki':
-          case 'mraid':
-          case 'adikteev':
-          case 'bigabid':
-          case 'inmobi':
-          case 'snapchat':
-          case 'youappi':
-            extraScripts = `
+          switch (net.id) {
+            // =============== MRAID NETWORKS ===============
+            case 'applovin':
+            case 'ironsource':
+            case 'unityads':
+            case 'adcolony':
+            case 'vungle':
+            case 'aarki':
+            case 'mraid':
+            case 'adikteev':
+            case 'bigabid':
+            case 'inmobi':
+            case 'snapchat':
+            case 'youappi':
+              extraScripts = `
 <script>!function () { var n = !1, e = !1; function t() { return mraid.isViewable() && "hidden" !== mraid.getState() } function a() { n ? t() && e ? (window.dispatchEvent(new Event("luna:resume")), e = !1) : t() || e || (window.dispatchEvent(new Event("luna:pause")), e = !0) : t() && (window.dispatchEvent(new Event("luna:start")), n = !0) } function i() { } function d(n) { window.dispatchEvent(new Event(n ? "luna:unsafe:unmute" : "luna:unsafe:mute")) } var r = function () { "undefined" != typeof mraid ? (mraid.removeEventListener("ready", r), mraid.addEventListener("viewableChange", a), mraid.addEventListener("stateChange", a), mraid.addEventListener("orientationchange", i), mraid.addEventListener("audioVolumeChange", d), a()) : window.dispatchEvent(new Event("luna:start")) }; window.addEventListener("luna:build", (function () { window.pi.logLoaded(), "undefined" != typeof mraid ? "loading" === mraid.getState() ? mraid.addEventListener("ready", r) : r() : window.dispatchEvent(new Event("luna:start")) })) }()</script>
 <script>window.addEventListener("luna:build", (function () { Bridge.ready((function () { Luna.Unity.Playable.InstallFullGame = function (n, i) { window.pi.logCta(), n = n || window.$environment.packageConfig.iosLink, i = i || window.$environment.packageConfig.androidLink; const o = /iphone|ipad|ipod|macintosh/i.test(window.navigator.userAgent.toLowerCase()) ? n : i; "undefined" != typeof mraid ? mraid.open(o) : (console.warn("Mraid is not defined"), window.open(o, "_blank")) } })) }))</script>`;
-            break;
+              break;
 
-          // =============== GOOGLE / EXIT API NETWORKS ===============
-          case 'google':
-          case 'dv360':
-          case 'gam':
-            if (!newContent.includes('name="ad.size"')) {
-              newContent = newContent.replace('</head>', '<meta name="ad.size" content="width=320,height=480">\n</head>');
-            }
-            extraScripts = `
+            // =============== GOOGLE / EXIT API NETWORKS ===============
+            case 'google':
+            case 'dv360':
+            case 'gam':
+              if (!newContent.includes('name="ad.size"')) {
+                newContent = newContent.replace('</head>', '<meta name="ad.size" content="width=320,height=480">\n</head>');
+              }
+              extraScripts = `
 <script>window.addEventListener("luna:build", (function () { window.pi.logLoaded(), window.dispatchEvent(new Event("luna:start")) }))</script>
 <script>window.addEventListener("luna:build", (() => { Bridge.ready((() => { Luna.Unity.Playable.InstallFullGame = function () { window.ExitApi.exit() } })) }))</script>`;
-            break;
+              break;
 
-          // =============== MINTEGRAL ===============
-          case 'mintegral':
-            extraScripts = `
+            // =============== MINTEGRAL ===============
+            case 'mintegral':
+              extraScripts = `
 <script>window.gameClose = function () { window.dispatchEvent(new Event("luna:pause")) }, window.addEventListener("luna:build", (() => { Bridge.ready((() => { Luna.Unity.Playable.InstallFullGame = function () { window.pi.logCta(), window.gameEnd && window.gameEnd() ,window.install && window.install() } })) })), window.addEventListener("luna:ended", (() => { window.gameEnd && window.gameEnd() }))</script>
 <script>window.addEventListener("luna:build", (() => { window.pi.logLoaded(), window.dispatchEvent(new Event("luna:unsafe:pause")), window.dispatchEvent(new Event("luna:start")) })), window.addEventListener("luna:started", (() => { window.gameReady && window.gameReady() })), window.gameStart = function () { window.dispatchEvent(new Event("luna:unsafe:resume")) }</script>`;
-            break;
+              break;
 
-          // =============== TIKTOK / APP STORE APIS ===============
-          case 'tiktok':
-          case 'moloco':
-            extraScripts = `
+            // =============== TIKTOK / APP STORE APIS ===============
+            case 'tiktok':
+            case 'moloco':
+              extraScripts = `
 <script>!function(){function a(){document.hidden?(window.dispatchEvent(new Event("luna:pause")),window.dispatchEvent(new Event("luna:unsafe:mute"))):(window.dispatchEvent(new Event("luna:resume")),window.dispatchEvent(new Event("luna:unsafe:unmute")))}window.addEventListener("luna:build",(function(){window.pi.logLoaded(),window.dispatchEvent(new Event("luna:start")),document.addEventListener("visibilitychange",a)}))}()</script>
 <script>window.addEventListener("luna:build", (function () { Bridge.ready((function () { Luna.Unity.Playable.InstallFullGame = function (n, i) { window.pi.logCta(), n = n || window.$environment.packageConfig.iosLink, i = i || window.$environment.packageConfig.androidLink; const o = /iphone|ipad|ipod|macintosh/i.test(window.navigator.userAgent.toLowerCase()) ? n : i; typeof window.openAppStore === "function" ? window.openAppStore() : (window.playableSDK && typeof window.playableSDK.openAppStore === "function" ? window.playableSDK.openAppStore() : (console.warn("PlayableSDK is not defined"), window.open(o, "_blank"))) } })) }))</script>`;
-            break;
+              break;
 
-          // =============== STANDARD WINDOW.OPEN FALLBACK ===============
-          case 'facebook':
-          case 'fbgaming':
-          case 'appreciate':
-          case 'liftoff':
-          case 'remerge':
-          case 'tencent':
-          default:
-            extraScripts = `
+            // =============== STANDARD WINDOW.OPEN FALLBACK ===============
+            case 'facebook':
+            case 'fbgaming':
+            case 'appreciate':
+            case 'liftoff':
+            case 'remerge':
+            case 'tencent':
+            default:
+              extraScripts = `
 <script>!function(){function a(){document.hidden?(window.dispatchEvent(new Event("luna:pause")),window.dispatchEvent(new Event("luna:unsafe:mute"))):(window.dispatchEvent(new Event("luna:resume")),window.dispatchEvent(new Event("luna:unsafe:unmute")))}window.addEventListener("luna:build",(function(){window.pi.logLoaded(),window.dispatchEvent(new Event("luna:start")),document.addEventListener("visibilitychange",a)}))}()</script>
 <script>window.addEventListener("luna:build", (function () { Bridge.ready((function () { Luna.Unity.Playable.InstallFullGame = function (n, i) { window.pi.logCta(), n = n || window.$environment.packageConfig.iosLink, i = i || window.$environment.packageConfig.androidLink; const o = /iphone|ipad|ipod|macintosh/i.test(window.navigator.userAgent.toLowerCase()) ? n : i; window.open(o, "_blank"); } })) }))</script>`;
-            break;
-        }
-
-        // Handle Custom Links Replacement
-        if (overrideLinks) {
-          const customAndroid = androidLink.trim();
-          const customIos = iosLink.trim();
-
-          if (customAndroid) {
-            extraScripts = extraScripts.replace(/window\.\$environment\.packageConfig\.androidLink/g, `"${customAndroid}"`);
-            newContent = newContent.replace(/androidLink\s*:\s*"[^"]*"/g, `androidLink: "${customAndroid}"`);
+              break;
           }
-          if (customIos) {
-            extraScripts = extraScripts.replace(/window\.\$environment\.packageConfig\.iosLink/g, `"${customIos}"`);
-            newContent = newContent.replace(/iosLink\s*:\s*"[^"]*"/g, `iosLink: "${customIos}"`);
+
+          // Handle Custom Links Replacement
+          if (overrideLinks) {
+            const customAndroid = androidLink.trim();
+            const customIos = iosLink.trim();
+
+            if (customAndroid) {
+              extraScripts = extraScripts.replace(/window\.\$environment\.packageConfig\.androidLink/g, `"${customAndroid}"`);
+              newContent = newContent.replace(/androidLink\s*:\s*"[^"]*"/g, `androidLink: "${customAndroid}"`);
+            }
+            if (customIos) {
+              extraScripts = extraScripts.replace(/window\.\$environment\.packageConfig\.iosLink/g, `"${customIos}"`);
+              newContent = newContent.replace(/iosLink\s*:\s*"[^"]*"/g, `iosLink: "${customIos}"`);
+            }
           }
-        }
 
-        // Append extra scripts before closing body
-        if (extraScripts !== "") {
-          newContent = newContent.replace('</body>', extraScripts + '\n</body>');
-        }
+          // Append extra scripts before closing body
+          if (extraScripts !== "") {
+            newContent = newContent.replace('</body>', extraScripts + '\n</body>');
+          }
 
-        // Generate Filename
-        const cleanNetworkName = net.name.replace(/[^a-zA-Z0-9]/g, '');
-        const baseFilename = `${cleanNetworkName}_${game}_${pa}_${level}`;
+          // Generate Filename
+          const cleanNetworkName = net.name.replace(/[^a-zA-Z0-9]/g, '');
+          const baseFilename = isBatchMode
+            ? `${cleanNetworkName}_${originalBaseName}`
+            : `${cleanNetworkName}_${game}_${pa}_${level}`;
 
-        // Add to zip structure
-        if (net.zip) {
-          const innerZip = new JSZip();
-          innerZip.file('index.html', newContent);
-          const innerZipPromise = innerZip.generateAsync({ type: "blob" }).then(blob => {
-            zip.file(`${baseFilename}.zip`, blob);
-            addLog(`Created ${baseFilename}.zip`);
-          });
-          zipPromises.push(innerZipPromise);
-        } else {
-          zip.file(`${baseFilename}.html`, newContent);
-          addLog(`Created ${baseFilename}.html`);
-        }
-      });
+          // Add to zip structure
+          if (net.zip) {
+            const innerZip = new JSZip();
+            innerZip.file('index.html', newContent);
+            const innerZipPromise = innerZip.generateAsync({ type: "blob" }).then(blob => {
+              zip.file(`${baseFilename}.zip`, blob);
+              addLog(`Created ${baseFilename}.zip`);
+            });
+            zipPromises.push(innerZipPromise);
+          } else {
+            zip.file(`${baseFilename}.html`, newContent);
+            addLog(`Created ${baseFilename}.html`);
+          }
+        });
+      }
 
       await Promise.all(zipPromises);
 
       addLog(`Zipping files... Please wait.`);
       const masterZipContent = await zip.generateAsync({ type: "blob" });
 
-      saveAs(masterZipContent, `${game}_${pa}_${level}.zip`);
+      const zipOutputName = isBatchMode
+        ? `Converted_Playables.zip`
+        : `${game}_${pa}_${level}.zip`;
+
+      saveAs(masterZipContent, zipOutputName);
       addLog(`✓ Done! Download triggered.`);
 
     } catch (err) {
@@ -522,13 +593,29 @@ export default function Home() {
 
       {/* HERO CONTENT AREA */}
       <main className="relative z-10 flex-1 flex flex-col items-center justify-center px-6 py-12 text-center -translate-y-[20%]">
-        <button 
-          onClick={() => setIsModalOpen(true)}
-          className="liquid-glass rounded-full px-10 py-4 text-white text-base font-semibold hover:bg-white/10 hover:scale-105 active:scale-95 transition-all cursor-pointer flex items-center gap-3 shadow-2xl"
-        >
-          <Settings className="w-5 h-5 text-indigo-400" />
-          <span>Open Luna Playable Converter</span>
-        </button>
+        <div className="flex flex-col sm:flex-row gap-4 justify-center items-center max-w-2xl w-full">
+          <button 
+            onClick={() => {
+              setIsBatchMode(false);
+              setIsModalOpen(true);
+            }}
+            className="liquid-glass rounded-full px-8 py-4 text-white text-sm sm:text-base font-semibold hover:bg-white/10 hover:scale-105 active:scale-95 transition-all cursor-pointer flex items-center gap-3 shadow-2xl w-full sm:w-auto"
+          >
+            <Settings className="w-5 h-5 text-indigo-400" />
+            <span>Single File Converter</span>
+          </button>
+          
+          <button 
+            onClick={() => {
+              setIsBatchMode(true);
+              setIsModalOpen(true);
+            }}
+            className="liquid-glass rounded-full px-8 py-4 text-white text-sm sm:text-base font-semibold hover:bg-white/10 hover:scale-105 active:scale-95 transition-all cursor-pointer flex items-center gap-3 shadow-2xl w-full sm:w-auto"
+          >
+            <UploadCloud className="w-5 h-5 text-emerald-400" />
+            <span>Batch Converter (Keep Names)</span>
+          </button>
+        </div>
       </main>
 
       {/* SOCIAL ICONS FOOTER */}
@@ -575,63 +662,105 @@ export default function Home() {
               <X className="w-5 h-5" />
             </button>
 
-            {/* Modal Title */}
-            <div>
-              <h2 className="text-2xl font-bold flex items-center gap-2">
-                <Settings className="w-6 h-6 text-indigo-400" />
-                <span>Luna Playable Converter</span>
-              </h2>
-              <p className="text-white/60 text-sm mt-1">
-                Configure settings, upload a Luna HTML file, and export for multiple target ad networks.
-              </p>
+            {/* Modal Title and Mode Toggle */}
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-white/10 pb-4">
+              <div>
+                <h2 className="text-2xl font-bold flex items-center gap-2">
+                  {isBatchMode ? (
+                    <>
+                      <UploadCloud className="w-6 h-6 text-emerald-400" />
+                      <span>Batch Playable Converter</span>
+                    </>
+                  ) : (
+                    <>
+                      <Settings className="w-6 h-6 text-indigo-400" />
+                      <span>Luna Playable Converter</span>
+                    </>
+                  )}
+                </h2>
+                <p className="text-white/60 text-xs mt-1">
+                  {isBatchMode 
+                    ? "Upload multiple HTML files; converted files will maintain their original names."
+                    : "Configure settings, upload a Luna HTML file, and export for multiple target ad networks."
+                  }
+                </p>
+              </div>
+
+              {/* Mode Pill Toggle */}
+              <div className="flex bg-black/40 p-1 rounded-full border border-white/5 shrink-0 select-none">
+                <button
+                  onClick={() => setIsBatchMode(false)}
+                  className={`px-4 py-1.5 rounded-full text-xs font-semibold transition-all cursor-pointer ${
+                    !isBatchMode 
+                      ? 'bg-white text-black shadow-md' 
+                      : 'text-white/60 hover:text-white'
+                  }`}
+                >
+                  Single File
+                </button>
+                <button
+                  onClick={() => setIsBatchMode(true)}
+                  className={`px-4 py-1.5 rounded-full text-xs font-semibold transition-all cursor-pointer ${
+                    isBatchMode 
+                      ? 'bg-white text-black shadow-md' 
+                      : 'text-white/60 hover:text-white'
+                  }`}
+                >
+                  Batch Mode
+                </button>
+              </div>
             </div>
 
             {/* Modal Grid Section */}
             <div className="grid grid-cols-1 md:grid-cols-12 gap-6">
               {/* Settings Configuration Column */}
               <div className="md:col-span-7 space-y-5">
-                <h3 className="text-sm font-semibold text-white/40 uppercase tracking-wider border-b border-white/10 pb-2">
-                  Naming Configuration
-                </h3>
+                {!isBatchMode && (
+                  <>
+                    <h3 className="text-sm font-semibold text-white/40 uppercase tracking-wider border-b border-white/10 pb-2">
+                      Naming Configuration
+                    </h3>
 
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                  <div className="space-y-1">
-                    <label className="text-xs text-white/50 flex items-center gap-1">
-                      <Gamepad2 className="w-3.5 h-3.5" /> Game Name
-                    </label>
-                    <input 
-                      type="text" 
-                      value={gameName}
-                      onChange={(e) => setGameName(e.target.value)}
-                      placeholder="e.g. MyGame" 
-                      className="w-full bg-black/40 border border-white/10 rounded-lg px-4 py-2 text-sm text-white placeholder:text-white/20 focus:outline-none focus:border-white/35 transition-all"
-                    />
-                  </div>
-                  <div className="space-y-1">
-                    <label className="text-xs text-white/50 flex items-center gap-1">
-                      <Smartphone className="w-3.5 h-3.5" /> PA Name
-                    </label>
-                    <input 
-                      type="text" 
-                      value={paName}
-                      onChange={(e) => setPaName(e.target.value)}
-                      placeholder="e.g. PA" 
-                      className="w-full bg-black/40 border border-white/10 rounded-lg px-4 py-2 text-sm text-white placeholder:text-white/20 focus:outline-none focus:border-white/35 transition-all"
-                    />
-                  </div>
-                  <div className="space-y-1">
-                    <label className="text-xs text-white/50 flex items-center gap-1">
-                      <Calendar className="w-3.5 h-3.5" /> Level Name
-                    </label>
-                    <input 
-                      type="text" 
-                      value={levelName}
-                      onChange={(e) => setLevelName(e.target.value)}
-                      placeholder="e.g. 01" 
-                      className="w-full bg-black/40 border border-white/10 rounded-lg px-4 py-2 text-sm text-white placeholder:text-white/20 focus:outline-none focus:border-white/35 transition-all"
-                    />
-                  </div>
-                </div>
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 animate-fade-in-up">
+                      <div className="space-y-1">
+                        <label className="text-xs text-white/50 flex items-center gap-1">
+                          <Gamepad2 className="w-3.5 h-3.5" /> Game Name
+                        </label>
+                        <input 
+                          type="text" 
+                          value={gameName}
+                          onChange={(e) => setGameName(e.target.value)}
+                          placeholder="e.g. MyGame" 
+                          className="w-full bg-black/40 border border-white/10 rounded-lg px-4 py-2 text-sm text-white placeholder:text-white/20 focus:outline-none focus:border-white/35 transition-all"
+                        />
+                      </div>
+                      <div className="space-y-1">
+                        <label className="text-xs text-white/50 flex items-center gap-1">
+                          <Smartphone className="w-3.5 h-3.5" /> PA Name
+                        </label>
+                        <input 
+                          type="text" 
+                          value={paName}
+                          onChange={(e) => setPaName(e.target.value)}
+                          placeholder="e.g. PA" 
+                          className="w-full bg-black/40 border border-white/10 rounded-lg px-4 py-2 text-sm text-white placeholder:text-white/20 focus:outline-none focus:border-white/35 transition-all"
+                        />
+                      </div>
+                      <div className="space-y-1">
+                        <label className="text-xs text-white/50 flex items-center gap-1">
+                          <Calendar className="w-3.5 h-3.5" /> Level Name
+                        </label>
+                        <input 
+                          type="text" 
+                          value={levelName}
+                          onChange={(e) => setLevelName(e.target.value)}
+                          placeholder="e.g. 01" 
+                          className="w-full bg-black/40 border border-white/10 rounded-lg px-4 py-2 text-sm text-white placeholder:text-white/20 focus:outline-none focus:border-white/35 transition-all"
+                        />
+                      </div>
+                    </div>
+                  </>
+                )}
 
                 {/* Custom Links Override */}
                 <div className="pt-2 space-y-3">
@@ -720,63 +849,117 @@ export default function Home() {
               <div className="md:col-span-5 flex flex-col justify-between space-y-6">
                 <div>
                   <h3 className="text-sm font-semibold text-white/40 uppercase tracking-wider border-b border-white/10 pb-2 mb-4">
-                    Luna File Upload
+                    {isBatchMode ? 'Luna Batch Files Upload' : 'Luna File Upload'}
                   </h3>
 
-                  {/* Dropzone */}
-                  <div 
-                    onDragOver={handleDragOver}
-                    onDragLeave={handleDragLeave}
-                    onDrop={handleDrop}
-                    onClick={() => fileInputRef.current?.click()}
-                    className={`rounded-2xl p-6 border border-dashed transition-all cursor-pointer text-center flex flex-col items-center justify-center min-h-[180px] ${
-                      isDragging 
-                        ? 'border-indigo-400 bg-indigo-950/20' 
-                        : uploadedHtmlContent
-                          ? 'border-emerald-500/40 bg-emerald-950/10 hover:border-emerald-500/60' 
-                          : 'border-white/10 bg-white/5 hover:border-white/20'
-                    }`}
-                  >
-                    <input 
-                      type="file" 
-                      ref={fileInputRef}
-                      onChange={handleFileChange}
-                      accept=".html" 
-                      className="hidden"
-                    />
-                    
-                    <div className="space-y-2 pointer-events-none">
-                      <div className={`w-12 h-12 rounded-full flex items-center justify-center mx-auto border ${
-                        uploadedHtmlContent 
-                          ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-400'
-                          : 'bg-white/5 border-white/10 text-white/60'
-                      }`}>
-                        {uploadedHtmlContent ? (
-                          <CheckCircle2 className="w-6 h-6" />
-                        ) : (
-                          <UploadCloud className="w-6 h-6" />
-                        )}
+                  {isBatchMode && uploadedFilesList.length > 0 ? (
+                    <div className="space-y-3 w-full text-left animate-fade-in-up">
+                      <div className="flex justify-between items-center pb-2 border-b border-white/10">
+                        <span className="text-xs font-semibold text-white/50">
+                          Uploaded Files ({uploadedFilesList.length})
+                        </span>
+                        <button 
+                          onClick={() => setUploadedFilesList([])}
+                          className="text-[10px] text-rose-400 hover:text-rose-300 font-semibold cursor-pointer"
+                        >
+                          Clear All
+                        </button>
                       </div>
                       
-                      <div>
-                        <h4 className="text-sm font-bold text-white/90 truncate max-w-[200px] mx-auto">
-                          {uploadedFileName || 'Upload HTML'}
-                        </h4>
-                        <p className="text-[11px] text-white/40 mt-0.5">
-                          {uploadedFileSize ? `${uploadedFileSize} MB - Ready` : 'Drop Luna build HTML'}
-                        </p>
+                      <div className="max-h-48 overflow-y-auto pr-1 space-y-1.5 scrollbar-thin">
+                        {uploadedFilesList.map((file, idx) => (
+                          <div key={idx} className="flex justify-between items-center bg-white/5 border border-white/5 rounded-lg px-3 py-2 text-xs">
+                            <div className="flex items-center gap-2 truncate flex-1">
+                              <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
+                              <span className="truncate font-medium text-white/90">{file.name}</span>
+                            </div>
+                            <div className="flex items-center gap-3 shrink-0 ml-2">
+                              <span className="text-[10px] text-white/40">{file.size} MB</span>
+                              <button 
+                                onClick={() => setUploadedFilesList(prev => prev.filter((_, i) => i !== idx))}
+                                className="p-1 hover:bg-white/10 rounded text-white/60 hover:text-rose-400 transition-all cursor-pointer"
+                              >
+                                <X className="w-3.5 h-3.5" />
+                              </button>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+
+                      <button 
+                        onClick={() => fileInputRef.current?.click()}
+                        className="w-full py-2 border border-dashed border-white/15 hover:border-white/30 rounded-xl text-center text-xs font-medium text-white/60 hover:text-white transition-all cursor-pointer bg-white/0 hover:bg-white/5"
+                      >
+                        + Add More Files
+                      </button>
+                    </div>
+                  ) : (
+                    /* Dropzone */
+                    <div 
+                      onDragOver={handleDragOver}
+                      onDragLeave={handleDragLeave}
+                      onDrop={handleDrop}
+                      onClick={() => fileInputRef.current?.click()}
+                      className={`rounded-2xl p-6 border border-dashed transition-all cursor-pointer text-center flex flex-col items-center justify-center min-h-[180px] ${
+                        isDragging 
+                          ? 'border-indigo-400 bg-indigo-950/20' 
+                          : (isBatchMode ? uploadedFilesList.length > 0 : uploadedHtmlContent)
+                            ? 'border-emerald-500/40 bg-emerald-950/10 hover:border-emerald-500/60' 
+                            : 'border-white/10 bg-white/5 hover:border-white/20'
+                      }`}
+                    >
+                      <input 
+                        type="file" 
+                        ref={fileInputRef}
+                        onChange={handleFileChange}
+                        accept=".html" 
+                        multiple={isBatchMode}
+                        className="hidden"
+                      />
+                      
+                      <div className="space-y-2 pointer-events-none">
+                        <div className={`w-12 h-12 rounded-full flex items-center justify-center mx-auto border ${
+                          (!isBatchMode && uploadedHtmlContent) || (isBatchMode && uploadedFilesList.length > 0)
+                            ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-400'
+                            : 'bg-white/5 border-white/10 text-white/60'
+                        }`}>
+                          {(!isBatchMode && uploadedHtmlContent) || (isBatchMode && uploadedFilesList.length > 0) ? (
+                            <CheckCircle2 className="w-6 h-6" />
+                          ) : (
+                            <UploadCloud className="w-6 h-6" />
+                          )}
+                        </div>
+                        
+                        <div>
+                          <h4 className="text-sm font-bold text-white/90 truncate max-w-[200px] mx-auto">
+                            {isBatchMode 
+                              ? 'Upload HTML Files' 
+                              : (uploadedFileName || 'Upload HTML')
+                            }
+                          </h4>
+                          <p className="text-[11px] text-white/40 mt-0.5">
+                            {isBatchMode 
+                              ? 'Drop one or more HTML files' 
+                              : (uploadedFileSize ? `${uploadedFileSize} MB - Ready` : 'Drop Luna build HTML')
+                            }
+                          </p>
+                        </div>
                       </div>
                     </div>
-                  </div>
+                  )}
                 </div>
 
                 {/* Conversion trigger */}
                 <div className="space-y-4">
                   <button 
                     onClick={handleConvert}
-                    disabled={!uploadedHtmlContent || isConverting || selectedNetworkIds.length === 0}
+                    disabled={
+                      (isBatchMode ? uploadedFilesList.length === 0 : !uploadedHtmlContent) || 
+                      isConverting || 
+                      selectedNetworkIds.length === 0
+                    }
                     className={`w-full py-3.5 px-6 rounded-xl font-bold flex items-center justify-center space-x-2 transition-all select-none cursor-pointer ${
-                      !uploadedHtmlContent || selectedNetworkIds.length === 0
+                      (isBatchMode ? uploadedFilesList.length === 0 : !uploadedHtmlContent) || selectedNetworkIds.length === 0
                         ? 'bg-white/5 text-white/20 border border-white/5 cursor-not-allowed'
                         : isConverting
                           ? 'bg-indigo-600 text-white cursor-wait'
