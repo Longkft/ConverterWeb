@@ -91,7 +91,7 @@ function AnimatedHeading({ text }) {
   
   return (
     <h1 
-      className="text-3xl sm:text-4xl md:text-5xl lg:text-6xl xl:text-7xl font-normal text-white mb-4 leading-tight text-center" 
+      className="text-3xl sm:text-4xl md:text-5xl lg:text-6xl xl:text-7xl font-bold mb-4 leading-tight text-center animated-gradient-text" 
       style={{ letterSpacing: '-0.04em' }}
     >
       {lines.map((line, lineIndex) => {
@@ -109,7 +109,9 @@ function AnimatedHeading({ text }) {
                     opacity: active ? 1 : 0,
                     transform: active ? 'translateX(0)' : 'translateX(-18px)',
                     transitionDuration: '500ms',
-                    transitionDelay: `${delay}ms`
+                    transitionDelay: `${delay}ms`,
+                    color: 'inherit',
+                    WebkitTextFillColor: 'inherit'
                   }}
                 >
                   {renderedChar}
