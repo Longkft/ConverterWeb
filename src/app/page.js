@@ -967,7 +967,7 @@ export default function Home() {
                     </button>
                   </div>
                   
-                  <div className="grid grid-cols-2 gap-2 max-h-56 overflow-y-auto pr-1 select-none border border-white/5 p-2 rounded-xl bg-black/20">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 max-h-56 overflow-y-auto pr-1 select-none border border-white/5 p-2 rounded-xl bg-black/20">
                     {NETWORKS.map(net => {
                       const isChecked = selectedNetworkIds.includes(net.id);
                       return (
