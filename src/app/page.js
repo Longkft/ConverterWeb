@@ -87,9 +87,8 @@ const NETWORKS = [
 export default function Home() {
   // --- CORE LUNA CONVERTER STATE ---
   const [gameName, setGameName] = useState('');
-  const [paName, setPaName] = useState('');
-  const [creatorName, setCreatorName] = useState('');
-  const [dateCode, setDateCode] = useState('');
+  const [paName, setPaName] = useState('PA');
+  const [levelName, setLevelName] = useState('01');
   const [overrideLinks, setOverrideLinks] = useState(false);
   const [androidLink, setAndroidLink] = useState('');
   const [iosLink, setIosLink] = useState('');
@@ -124,14 +123,7 @@ export default function Home() {
     }
   }, [logs]);
 
-  // Set date code on component mount
-  useEffect(() => {
-    const today = new Date();
-    const dd = String(today.getDate()).padStart(2, '0');
-    const mm = String(today.getMonth() + 1).padStart(2, '0');
-    const yy = String(today.getFullYear()).slice(-2);
-    setDateCode(`${dd}${mm}${yy}`);
-  }, []);
+  // No date code initialization needed
 
   // --- CUSTOM VIDEO JS FADE SYSTEM ---
   const startFade = (targetOpacity, duration, onComplete) => {
@@ -296,8 +288,7 @@ export default function Home() {
 
     const game = gameName.trim() || 'Game';
     const pa = paName.trim() || 'PA';
-    const creator = creatorName.trim() || 'Creator';
-    const date = dateCode.trim() || '000000';
+    const level = levelName.trim() || '01';
 
     const selectedNetworks = NETWORKS.filter(n => selectedNetworkIds.includes(n.id));
 
@@ -433,7 +424,7 @@ export default function Home() {
 
         // Generate Filename
         const cleanNetworkName = net.name.replace(/[^a-zA-Z0-9]/g, '');
-        const baseFilename = `${cleanNetworkName}_${game}_${pa}_${creator}${date}`;
+        const baseFilename = `${game}_${pa}_${level}_${cleanNetworkName}`;
 
         // Add to zip structure
         if (net.zip) {
@@ -455,7 +446,7 @@ export default function Home() {
       addLog(`Zipping files... Please wait.`);
       const masterZipContent = await zip.generateAsync({ type: "blob" });
 
-      saveAs(masterZipContent, `${game}_Playables_${date}.zip`);
+      saveAs(masterZipContent, `${game}_${pa}_${level}.zip`);
       addLog(`✓ Done! Download triggered.`);
 
     } catch (err) {
@@ -603,7 +594,7 @@ export default function Home() {
                   Naming Configuration
                 </h3>
 
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                   <div className="space-y-1">
                     <label className="text-xs text-white/50 flex items-center gap-1">
                       <Gamepad2 className="w-3.5 h-3.5" /> Game Name
@@ -618,37 +609,25 @@ export default function Home() {
                   </div>
                   <div className="space-y-1">
                     <label className="text-xs text-white/50 flex items-center gap-1">
-                      <Smartphone className="w-3.5 h-3.5" /> PA Name (Level)
+                      <Smartphone className="w-3.5 h-3.5" /> PA Name
                     </label>
                     <input 
                       type="text" 
                       value={paName}
                       onChange={(e) => setPaName(e.target.value)}
-                      placeholder="e.g. Lvl1" 
+                      placeholder="e.g. PA" 
                       className="w-full bg-black/40 border border-white/10 rounded-lg px-4 py-2 text-sm text-white placeholder:text-white/20 focus:outline-none focus:border-white/35 transition-all"
                     />
                   </div>
                   <div className="space-y-1">
                     <label className="text-xs text-white/50 flex items-center gap-1">
-                      <User className="w-3.5 h-3.5" /> Creator Name
+                      <Calendar className="w-3.5 h-3.5" /> Level Name
                     </label>
                     <input 
                       type="text" 
-                      value={creatorName}
-                      onChange={(e) => setCreatorName(e.target.value)}
-                      placeholder="e.g. Thanh" 
-                      className="w-full bg-black/40 border border-white/10 rounded-lg px-4 py-2 text-sm text-white placeholder:text-white/20 focus:outline-none focus:border-white/35 transition-all"
-                    />
-                  </div>
-                  <div className="space-y-1">
-                    <label className="text-xs text-white/50 flex items-center gap-1">
-                      <Calendar className="w-3.5 h-3.5" /> Date Code
-                    </label>
-                    <input 
-                      type="text" 
-                      value={dateCode}
-                      onChange={(e) => setDateCode(e.target.value)}
-                      placeholder="DDMMYY" 
+                      value={levelName}
+                      onChange={(e) => setLevelName(e.target.value)}
+                      placeholder="e.g. 01" 
                       className="w-full bg-black/40 border border-white/10 rounded-lg px-4 py-2 text-sm text-white placeholder:text-white/20 focus:outline-none focus:border-white/35 transition-all"
                     />
                   </div>
