@@ -78,40 +78,33 @@ function FadeIn({ children, delay = 0, duration = 1000 }) {
 }
 
 function AnimatedHeading({ text }) {
-  const [active, setActive] = useState(false);
-  const charDelay = 30;
-  const initialDelay = 200;
-
-  useEffect(() => {
-    const timer = setTimeout(() => setActive(true), initialDelay);
-    return () => clearTimeout(timer);
-  }, []);
-
+  const charDelay = 120; // delay between character cycles for smooth waves
   const lines = text.includes('\\n') ? text.split('\\n') : text.split('\n');
   
   return (
     <h1 
-      className="text-3xl sm:text-4xl md:text-5xl lg:text-6xl xl:text-7xl font-bold mb-4 leading-tight text-center animated-gradient-text" 
+      className="text-3xl sm:text-4xl md:text-5xl lg:text-6xl xl:text-7xl font-bold mb-4 leading-tight text-center text-white" 
       style={{ letterSpacing: '-0.04em' }}
     >
       {lines.map((line, lineIndex) => {
+        let previousCharsCount = 0;
+        for (let i = 0; i < lineIndex; i++) {
+          previousCharsCount += lines[i].length;
+        }
+
         return (
           <span key={lineIndex} className="block">
             {line.split('').map((char, charIndex) => {
-              const delay = lineIndex * line.length * charDelay + charIndex * charDelay;
+              const overallIndex = previousCharsCount + charIndex;
+              const delay = overallIndex * charDelay;
               const renderedChar = char === ' ' ? '\u00A0' : char;
 
               return (
                 <span
                   key={charIndex}
-                  className="inline-block transition-all ease-out"
+                  className="char-glow-wave"
                   style={{
-                    opacity: active ? 1 : 0,
-                    transform: active ? 'translateX(0)' : 'translateX(-18px)',
-                    transitionDuration: '500ms',
-                    transitionDelay: `${delay}ms`,
-                    color: 'inherit',
-                    WebkitTextFillColor: 'inherit'
+                    animationDelay: `${delay}ms`
                   }}
                 >
                   {renderedChar}

@@ -53,21 +53,19 @@ body {
   animation: fadeInUp 0.5s ease-out forwards;
 }
 
-.animated-gradient-text {
-  background: linear-gradient(to right, #ffffff 0%, #a3a3a3 25%, #ffffff 50%, #a3a3a3 75%, #ffffff 100%);
-  background-size: 200% auto;
-  -webkit-background-clip: text;
-  background-clip: text;
-  -webkit-text-fill-color: transparent;
-  animation: textShine 6s linear infinite;
+.char-glow-wave {
+  display: inline-block;
+  animation: glowWave 4s ease-in-out infinite;
 }
 
-@keyframes textShine {
-  0% {
-    background-position: 0% center;
+@keyframes glowWave {
+  0%, 100% {
+    color: #ffffff;
+    text-shadow: 0 0 2px rgba(255, 255, 255, 0.1);
   }
-  100% {
-    background-position: 200% center;
+  50% {
+    color: #8c8c8c;
+    text-shadow: 0 0 10px rgba(255, 255, 255, 0.35);
   }
 }
 
