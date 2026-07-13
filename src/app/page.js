@@ -362,7 +362,9 @@ export default function Home() {
 
     try {
       if (isBatchMode) {
-        // BATCH MODE: One ZIP per HTML file, containing all of its converted networks
+        // BATCH MODE: One ZIP per HTML file, all bundled into one master ZIP
+        const masterZip = new JSZip();
+
         for (const fileItem of filesToProcess) {
           const fileContent = fileItem.content;
           const originalBaseName = fileItem.name.replace(/\.[^/.]+$/, "");
@@ -512,9 +514,14 @@ export default function Home() {
           await Promise.all(fileZipPromises);
           addLog(`Zipping package for ${originalBaseName}...`);
           const fileZipBlob = await fileZip.generateAsync({ type: "blob" });
-          saveAs(fileZipBlob, `${originalBaseName}.zip`);
-          addLog(`✓ Downloaded ${originalBaseName}.zip`);
+          masterZip.file(`${originalBaseName}.zip`, fileZipBlob);
+          addLog(`✓ Packaged ${originalBaseName}.zip into master bundle.`);
         }
+
+        addLog(`Creating master bundle package...`);
+        const masterZipContent = await masterZip.generateAsync({ type: "blob" });
+        saveAs(masterZipContent, 'Converted_Playables.zip');
+        addLog(`✓ Done! Download triggered.`);
       } else {
         // SINGLE FILE MODE (exactly as before)
         const fileItem = filesToProcess[0];
