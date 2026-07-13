@@ -91,7 +91,7 @@ function AnimatedHeading({ text }) {
   
   return (
     <h1 
-      className="text-4xl md:text-5xl lg:text-6xl xl:text-7xl font-normal text-white mb-4 leading-tight text-left" 
+      className="text-4xl md:text-5xl lg:text-6xl xl:text-7xl font-normal text-white mb-4 leading-tight text-center" 
       style={{ letterSpacing: '-0.04em' }}
     >
       {lines.map((line, lineIndex) => {
@@ -785,52 +785,50 @@ export default function Home() {
       )}
 
       {/* HERO CONTENT AREA */}
-      <main className="relative z-10 flex-1 flex flex-col justify-end px-6 md:px-12 lg:px-16 pb-12 lg:pb-16">
-        <div className="lg:grid lg:grid-cols-2 lg:items-end gap-8">
-          {/* Left Column */}
-          <div className="text-left space-y-5">
-            <AnimatedHeading text="Shaping tomorrow\nwith vision and action." />
-            
-            <FadeIn delay={800} duration={1000}>
-              <p className="text-base md:text-lg text-gray-300">
-                We back visionaries and craft ventures that define what comes next.
-              </p>
-            </FadeIn>
+      <main className="relative z-10 flex-1 flex flex-col items-center justify-center px-6 py-12 text-center">
+        <div className="max-w-4xl w-full flex flex-col items-center justify-center space-y-6">
+          {/* Floating Pill Tag */}
+          <FadeIn delay={1400} duration={1000}>
+            <div className="liquid-glass border border-white/20 px-5 py-2 rounded-full inline-flex items-center justify-center">
+              <span className="text-xs md:text-sm font-medium uppercase tracking-wider text-white/80 whitespace-nowrap">
+                Fast. Secure. Automated.
+              </span>
+            </div>
+          </FadeIn>
 
-            <FadeIn delay={1200} duration={1000}>
-              <div className="flex flex-wrap gap-4 pt-2">
-                <button 
-                  onClick={() => {
-                    setIsBatchMode(false);
-                    setIsModalOpen(true);
-                  }}
-                  className="bg-white text-black px-8 py-3 rounded-lg font-medium hover:bg-gray-100 transition-colors cursor-pointer"
-                >
-                  Single File Converter
-                </button>
-                <button 
-                  onClick={() => {
-                    setIsBatchMode(true);
-                    setIsModalOpen(true);
-                  }}
-                  className="liquid-glass border border-white/20 text-white px-8 py-3 rounded-lg font-medium hover:bg-white hover:text-black transition-all cursor-pointer"
-                >
-                  Batch Converter (Keep Names)
-                </button>
-              </div>
-            </FadeIn>
-          </div>
+          {/* Animated Heading */}
+          <AnimatedHeading text="Luna Playable\nHTML Converter." />
 
-          {/* Right Column */}
-          <div className="flex items-end justify-start lg:justify-end mt-8 lg:mt-0">
-            <FadeIn delay={1400} duration={1000}>
-              <div className="liquid-glass border border-white/20 px-6 py-3 rounded-xl">
-                <span className="text-lg md:text-xl lg:text-2xl font-light text-white whitespace-nowrap">
-                  Investing. Building. Advisory.
-                </span>
-              </div>
-            </FadeIn>
-          </div>
+          {/* Subheading */}
+          <FadeIn delay={800} duration={1000}>
+            <p className="text-base md:text-lg lg:text-xl text-gray-300 max-w-2xl mx-auto leading-relaxed text-center">
+              Instantly adapt and package your Luna HTML builds for all major ad networks.
+            </p>
+          </FadeIn>
+
+          {/* Action Buttons */}
+          <FadeIn delay={1200} duration={1000}>
+            <div className="flex flex-col sm:flex-row justify-center items-center gap-4 pt-4 w-full max-w-md mx-auto">
+              <button 
+                onClick={() => {
+                  setIsBatchMode(false);
+                  setIsModalOpen(true);
+                }}
+                className="w-full sm:w-auto bg-white text-black px-8 py-3 rounded-lg font-medium hover:bg-gray-100 transition-colors cursor-pointer text-sm md:text-base whitespace-nowrap"
+              >
+                Single File Converter
+              </button>
+              <button 
+                onClick={() => {
+                  setIsBatchMode(true);
+                  setIsModalOpen(true);
+                }}
+                className="w-full sm:w-auto liquid-glass border border-white/20 text-white px-8 py-3 rounded-lg font-medium hover:bg-white hover:text-black transition-all cursor-pointer text-sm md:text-base whitespace-nowrap"
+              >
+                Batch Converter (Keep Names)
+              </button>
+            </div>
+          </FadeIn>
         </div>
       </main>
 
