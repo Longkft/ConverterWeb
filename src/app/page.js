@@ -359,17 +359,171 @@ export default function Home() {
 
     setIsConverting(true);
     addLog(`--- Starting Conversion (Mode: ${isBatchMode ? 'Batch' : 'Single'}) ---`);
-    const zip = new JSZip();
-    const zipPromises = [];
 
     try {
-      for (const fileItem of filesToProcess) {
-        const fileContent = fileItem.content;
-        const originalBaseName = fileItem.name.replace(/\.[^/.]+$/, "");
+      if (isBatchMode) {
+        // BATCH MODE: One ZIP per HTML file, containing all of its converted networks
+        for (const fileItem of filesToProcess) {
+          const fileContent = fileItem.content;
+          const originalBaseName = fileItem.name.replace(/\.[^/.]+$/, "");
+          
+          addLog(`Creating ZIP package for ${fileItem.name}...`);
+          const fileZip = new JSZip();
+          const fileZipPromises = [];
+
+          selectedNetworks.forEach(net => {
+            addLog(`> Processing ${net.name} for ${fileItem.name}...`);
+            let newContent = fileContent;
+
+            // 0. Remove the Luna Remote Debugging script (console.re wrapper)
+            newContent = newContent.replace(
+              /<script>\(\(\)\s*=>\s*\{\s*let\s+[a-zA-Z_]\s*=\s*window\.insertYourRemoteDebuggingTokenHere[\s\S]*?\}\)\(\)<\/script>/g, 
+              ''
+            );
+
+            // 0.1 Remove all external tracking, debugging, and CDN URLs (EXCEPT Play Store / App Store links).
+            newContent = newContent.replace(
+              /https?:\/\/(?!(play\.google\.com|itunes\.apple\.com|apps\.apple\.com))[a-zA-Z0-9\.\-\/\?\&\=\_]+/gi, 
+              ''
+            );
+
+            // 0.2 Find and remove the last two <script> tags unconditionally
+            const scriptMatches = newContent.match(/<script[^>]*>[\s\S]*?<\/script>/ig);
+            if (scriptMatches && scriptMatches.length >= 2) {
+              const lastScript = scriptMatches[scriptMatches.length - 1];
+              const secondToLastScript = scriptMatches[scriptMatches.length - 2];
+
+              const lastIdx = newContent.lastIndexOf(lastScript);
+              if (lastIdx !== -1) {
+                newContent = newContent.substring(0, lastIdx) + newContent.substring(lastIdx + lastScript.length);
+              }
+
+              const secondLastIdx = newContent.lastIndexOf(secondToLastScript);
+              if (secondLastIdx !== -1) {
+                newContent = newContent.substring(0, secondLastIdx) + newContent.substring(secondLastIdx + secondToLastScript.length);
+              }
+            }
+
+            // 1. Replace targetPlatform
+            newContent = newContent.replace(/targetPlatform:\s*"[^"]+"/g, `targetPlatform:"${net.id}"`);
+
+            // 3. Add extra requirements & specific scripts based on network
+            let extraScripts = "";
+
+            switch (net.id) {
+              // =============== MRAID NETWORKS ===============
+              case 'applovin':
+              case 'ironsource':
+              case 'unityads':
+              case 'adcolony':
+              case 'vungle':
+              case 'aarki':
+              case 'mraid':
+              case 'adikteev':
+              case 'bigabid':
+              case 'inmobi':
+              case 'snapchat':
+              case 'youappi':
+                extraScripts = `
+<script>!function () { var n = !1, e = !1; function t() { return mraid.isViewable() && "hidden" !== mraid.getState() } function a() { n ? t() && e ? (window.dispatchEvent(new Event("luna:resume")), e = !1) : t() || e || (window.dispatchEvent(new Event("luna:pause")), e = !0) : t() && (window.dispatchEvent(new Event("luna:start")), n = !0) } function i() { } function d(n) { window.dispatchEvent(new Event(n ? "luna:unsafe:unmute" : "luna:unsafe:mute")) } var r = function () { "undefined" != typeof mraid ? (mraid.removeEventListener("ready", r), mraid.addEventListener("viewableChange", a), mraid.addEventListener("stateChange", a), mraid.addEventListener("orientationchange", i), mraid.addEventListener("audioVolumeChange", d), a()) : window.dispatchEvent(new Event("luna:start")) }; window.addEventListener("luna:build", (function () { window.pi.logLoaded(), "undefined" != typeof mraid ? "loading" === mraid.getState() ? mraid.addEventListener("ready", r) : r() : window.dispatchEvent(new Event("luna:start")) })) }()</script>
+<script>window.addEventListener("luna:build", (function () { Bridge.ready((function () { Luna.Unity.Playable.InstallFullGame = function (n, i) { window.pi.logCta(), n = n || window.$environment.packageConfig.iosLink, i = i || window.$environment.packageConfig.androidLink; const o = /iphone|ipad|ipod|macintosh/i.test(window.navigator.userAgent.toLowerCase()) ? n : i; "undefined" != typeof mraid ? mraid.open(o) : (console.warn("Mraid is not defined"), window.open(o, "_blank")) } })) }))</script>`;
+                break;
+
+              // =============== GOOGLE / EXIT API NETWORKS ===============
+              case 'google':
+              case 'dv360':
+              case 'gam':
+                if (!newContent.includes('name="ad.size"')) {
+                  newContent = newContent.replace('</head>', '<meta name="ad.size" content="width=320,height=480">\n</head>');
+                }
+                extraScripts = `
+<script>window.addEventListener("luna:build", (function () { window.pi.logLoaded(), window.dispatchEvent(new Event("luna:start")) }))</script>
+<script>window.addEventListener("luna:build", (() => { Bridge.ready((() => { Luna.Unity.Playable.InstallFullGame = function () { window.ExitApi.exit() } })) }))</script>`;
+                break;
+
+              // =============== MINTEGRAL ===============
+              case 'mintegral':
+                extraScripts = `
+<script>window.gameClose = function () { window.dispatchEvent(new Event("luna:pause")) }, window.addEventListener("luna:build", (() => { Bridge.ready((() => { Luna.Unity.Playable.InstallFullGame = function () { window.pi.logCta(), window.gameEnd && window.gameEnd() ,window.install && window.install() } })) })), window.addEventListener("luna:ended", (() => { window.gameEnd && window.gameEnd() }))</script>
+<script>window.addEventListener("luna:build", (() => { window.pi.logLoaded(), window.dispatchEvent(new Event("luna:unsafe:pause")), window.dispatchEvent(new Event("luna:start")) })), window.addEventListener("luna:started", (() => { window.gameReady && window.gameReady() })), window.gameStart = function () { window.dispatchEvent(new Event("luna:unsafe:resume")) }</script>`;
+                break;
+
+              // =============== TIKTOK / APP STORE APIS ===============
+              case 'tiktok':
+              case 'moloco':
+                extraScripts = `
+<script>!function(){function a(){document.hidden?(window.dispatchEvent(new Event("luna:pause")),window.dispatchEvent(new Event("luna:unsafe:mute"))):(window.dispatchEvent(new Event("luna:resume")),window.dispatchEvent(new Event("luna:unsafe:unmute")))}window.addEventListener("luna:build",(function(){window.pi.logLoaded(),window.dispatchEvent(new Event("luna:start")),document.addEventListener("visibilitychange",a)}))}()</script>
+<script>window.addEventListener("luna:build", (function () { Bridge.ready((function () { Luna.Unity.Playable.InstallFullGame = function (n, i) { window.pi.logCta(), n = n || window.$environment.packageConfig.iosLink, i = i || window.$environment.packageConfig.androidLink; const o = /iphone|ipad|ipod|macintosh/i.test(window.navigator.userAgent.toLowerCase()) ? n : i; typeof window.openAppStore === "function" ? window.openAppStore() : (window.playableSDK && typeof window.playableSDK.openAppStore === "function" ? window.playableSDK.openAppStore() : (console.warn("PlayableSDK is not defined"), window.open(o, "_blank"))) } })) }))</script>`;
+                break;
+
+              // =============== STANDARD WINDOW.OPEN FALLBACK ===============
+              case 'facebook':
+              case 'fbgaming':
+              case 'appreciate':
+              case 'liftoff':
+              case 'remerge':
+              case 'tencent':
+              default:
+                extraScripts = `
+<script>!function(){function a(){document.hidden?(window.dispatchEvent(new Event("luna:pause")),window.dispatchEvent(new Event("luna:unsafe:mute"))):(window.dispatchEvent(new Event("luna:resume")),window.dispatchEvent(new Event("luna:unsafe:unmute")))}window.addEventListener("luna:build",(function(){window.pi.logLoaded(),window.dispatchEvent(new Event("luna:start")),document.addEventListener("visibilitychange",a)}))}()</script>
+<script>window.addEventListener("luna:build", (function () { Bridge.ready((function () { Luna.Unity.Playable.InstallFullGame = function (n, i) { window.pi.logCta(), n = n || window.$environment.packageConfig.iosLink, i = i || window.$environment.packageConfig.androidLink; const o = /iphone|ipad|ipod|macintosh/i.test(window.navigator.userAgent.toLowerCase()) ? n : i; window.open(o, "_blank"); } })) }))</script>`;
+                break;
+            }
+
+            // Handle Custom Links Replacement
+            if (overrideLinks) {
+              const customAndroid = androidLink.trim();
+              const customIos = iosLink.trim();
+
+              if (customAndroid) {
+                extraScripts = extraScripts.replace(/window\.\$environment\.packageConfig\.androidLink/g, `"${customAndroid}"`);
+                newContent = newContent.replace(/androidLink\s*:\s*"[^"]*"/g, `androidLink: "${customAndroid}"`);
+              }
+              if (customIos) {
+                extraScripts = extraScripts.replace(/window\.\$environment\.packageConfig\.iosLink/g, `"${customIos}"`);
+                newContent = newContent.replace(/iosLink\s*:\s*"[^"]*"/g, `iosLink: "${customIos}"`);
+              }
+            }
+
+            // Append extra scripts before closing body
+            if (extraScripts !== "") {
+              newContent = newContent.replace('</body>', extraScripts + '\n</body>');
+            }
+
+            // Generate Filename: {Tên_Mạng}_{Tên_File_HTML_Gốc}
+            const cleanNetworkName = net.name.replace(/[^a-zA-Z0-9]/g, '');
+            const baseFilename = `${cleanNetworkName}_${originalBaseName}`;
+
+            // Add to inner ZIP or HTML
+            if (net.zip) {
+              const innerZip = new JSZip();
+              innerZip.file('index.html', newContent);
+              const innerZipPromise = innerZip.generateAsync({ type: "blob" }).then(blob => {
+                fileZip.file(`${baseFilename}.zip`, blob);
+                addLog(`  Created ${baseFilename}.zip`);
+              });
+              fileZipPromises.push(innerZipPromise);
+            } else {
+              fileZip.file(`${baseFilename}.html`, newContent);
+              addLog(`  Created ${baseFilename}.html`);
+            }
+          });
+
+          await Promise.all(fileZipPromises);
+          addLog(`Zipping package for ${originalBaseName}...`);
+          const fileZipBlob = await fileZip.generateAsync({ type: "blob" });
+          saveAs(fileZipBlob, `${originalBaseName}.zip`);
+          addLog(`✓ Downloaded ${originalBaseName}.zip`);
+        }
+      } else {
+        // SINGLE FILE MODE (exactly as before)
+        const fileItem = filesToProcess[0];
+        const zip = new JSZip();
+        const zipPromises = [];
 
         selectedNetworks.forEach(net => {
-          addLog(`Processing ${fileItem.name} for ${net.name}...`);
-          let newContent = fileContent;
+          addLog(`Processing ${net.name}...`);
+          let newContent = fileItem.content;
 
           // 0. Remove the Luna Remote Debugging script (console.re wrapper)
           newContent = newContent.replace(
@@ -455,7 +609,7 @@ export default function Home() {
             // =============== STANDARD WINDOW.OPEN FALLBACK ===============
             case 'facebook':
             case 'fbgaming':
-            case 'appreciate':
+              case 'appreciate':
             case 'liftoff':
             case 'remerge':
             case 'tencent':
@@ -488,9 +642,7 @@ export default function Home() {
 
           // Generate Filename
           const cleanNetworkName = net.name.replace(/[^a-zA-Z0-9]/g, '');
-          const baseFilename = isBatchMode
-            ? `${cleanNetworkName}_${originalBaseName}`
-            : `${cleanNetworkName}_${game}_${pa}_${level}`;
+          const baseFilename = `${cleanNetworkName}_${game}_${pa}_${level}`;
 
           // Add to zip structure
           if (net.zip) {
@@ -506,21 +658,15 @@ export default function Home() {
             addLog(`Created ${baseFilename}.html`);
           }
         });
-      }
 
-      await Promise.all(zipPromises);
+        await Promise.all(zipPromises);
 
-      addLog(`Zipping files... Please wait.`);
-      const masterZipContent = await zip.generateAsync({ type: "blob" });
+        addLog(`Zipping files... Please wait.`);
+        const masterZipContent = await zip.generateAsync({ type: "blob" });
 
-      const zipOutputName = isBatchMode
-        ? `Converted_Playables.zip`
-        : `${game}_${pa}_${level}.zip`;
-
-      saveAs(masterZipContent, zipOutputName);
-      addLog(`✓ Done! Download triggered.`);
-
-    } catch (err) {
+        saveAs(masterZipContent, `${game}_${pa}_${level}.zip`);
+        addLog(`✓ Done! Download triggered.`);
+      } } catch (err) {
       addLog(`❌ Error: ${err.message}`);
       console.error(err);
     } finally {
