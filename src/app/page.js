@@ -56,6 +56,72 @@ const Twitter = ({ className, size = 24 }) => (
   </svg>
 );
 
+function FadeIn({ children, delay = 0, duration = 1000 }) {
+  const [visible, setVisible] = useState(false);
+  
+  useEffect(() => {
+    const timer = setTimeout(() => setVisible(true), delay);
+    return () => clearTimeout(timer);
+  }, [delay]);
+
+  return (
+    <div 
+      className="transition-opacity" 
+      style={{ 
+        opacity: visible ? 1 : 0, 
+        transitionDuration: `${duration}ms` 
+      }}
+    >
+      {children}
+    </div>
+  );
+}
+
+function AnimatedHeading({ text }) {
+  const [active, setActive] = useState(false);
+  const charDelay = 30;
+  const initialDelay = 200;
+
+  useEffect(() => {
+    const timer = setTimeout(() => setActive(true), initialDelay);
+    return () => clearTimeout(timer);
+  }, []);
+
+  const lines = text.includes('\\n') ? text.split('\\n') : text.split('\n');
+  
+  return (
+    <h1 
+      className="text-4xl md:text-5xl lg:text-6xl xl:text-7xl font-normal text-white mb-4 leading-tight text-left" 
+      style={{ letterSpacing: '-0.04em' }}
+    >
+      {lines.map((line, lineIndex) => {
+        return (
+          <span key={lineIndex} className="block">
+            {line.split('').map((char, charIndex) => {
+              const delay = lineIndex * line.length * charDelay + charIndex * charDelay;
+              const renderedChar = char === ' ' ? '\u00A0' : char;
+
+              return (
+                <span
+                  key={charIndex}
+                  className="inline-block transition-all ease-out"
+                  style={{
+                    opacity: active ? 1 : 0,
+                    transform: active ? 'translateX(0)' : 'translateX(-18px)',
+                    transitionDuration: '500ms',
+                    transitionDelay: `${delay}ms`
+                  }}
+                >
+                  {renderedChar}
+                </span>
+              );
+            })}
+          </span>
+        );
+      })}
+    </h1>
+  );
+}
 
 const NETWORKS = [
   { id: 'facebook', name: 'Facebook (Meta)', abb: 'FB', zip: true },
@@ -699,16 +765,12 @@ export default function Home() {
     >
       {/* BACKGROUND VIDEO */}
       <video
-        ref={videoRef}
-        src="https://d8j0ntlcm91z4.cloudfront.net/user_38xzZboKViGWJOttwIXH07lWA1P/hf_20260328_115001_bcdaa3b4-03de-47e7-ad63-ae3e392c32d4.mp4"
+        src="https://d8j0ntlcm91z4.cloudfront.net/user_38xzZboKViGWJOttwIXH07lWA1P/hf_20260403_050628_c4e32401-fab4-4a27-b7a8-6e9291cd5959.mp4"
         muted
         autoPlay
+        loop
         playsInline
-        onTimeUpdate={handleTimeUpdate}
-        onEnded={handleEnded}
-        onPlay={handlePlay}
-        className="absolute inset-0 w-full h-full object-cover translate-y-[17%] pointer-events-none z-0"
-        style={{ opacity: 0 }}
+        className="absolute inset-0 w-full h-full object-cover pointer-events-none z-0"
       />
 
       {/* DRAG AND DROP OVERLAY NOTICE */}
@@ -722,85 +784,55 @@ export default function Home() {
         </div>
       )}
 
-      {/* NAVIGATION BAR */}
-      <nav className="relative z-20 px-6 py-6">
-        <div className="liquid-glass rounded-full px-6 py-3 flex items-center justify-between max-w-5xl mx-auto w-full">
-          {/* Left side */}
-          <div className="flex items-center gap-8">
-            <div className="flex items-center gap-2 text-white font-semibold text-lg cursor-pointer">
-              <Globe className="w-6 h-6" />
-              <span>Asme</span>
-            </div>
-            {/* Nav links */}
-            <div className="hidden md:flex items-center gap-8">
-              <a href="#features" className="text-white/80 hover:text-white transition-colors text-sm font-medium">Features</a>
-              <a href="#pricing" className="text-white/80 hover:text-white transition-colors text-sm font-medium">Pricing</a>
-              <a href="#about" className="text-white/80 hover:text-white transition-colors text-sm font-medium">About</a>
-            </div>
-          </div>
-          {/* Right side - removed login/signup */}
-          <div className="flex items-center gap-4">
-          </div>
-        </div>
-      </nav>
-
       {/* HERO CONTENT AREA */}
-      <main className="relative z-10 flex-1 flex flex-col items-center justify-center px-6 py-12 text-center -translate-y-[20%]">
-        <div className="flex flex-col sm:flex-row gap-4 justify-center items-center max-w-2xl w-full">
-          <button 
-            onClick={() => {
-              setIsBatchMode(false);
-              setIsModalOpen(true);
-            }}
-            className="liquid-glass rounded-full px-8 py-4 text-white text-sm sm:text-base font-semibold hover:bg-white/10 hover:scale-105 active:scale-95 transition-all cursor-pointer flex items-center gap-3 shadow-2xl w-full sm:w-auto"
-          >
-            <Settings className="w-5 h-5 text-indigo-400" />
-            <span>Single File Converter</span>
-          </button>
-          
-          <button 
-            onClick={() => {
-              setIsBatchMode(true);
-              setIsModalOpen(true);
-            }}
-            className="liquid-glass rounded-full px-8 py-4 text-white text-sm sm:text-base font-semibold hover:bg-white/10 hover:scale-105 active:scale-95 transition-all cursor-pointer flex items-center gap-3 shadow-2xl w-full sm:w-auto"
-          >
-            <UploadCloud className="w-5 h-5 text-emerald-400" />
-            <span>Batch Converter (Keep Names)</span>
-          </button>
+      <main className="relative z-10 flex-1 flex flex-col justify-end px-6 md:px-12 lg:px-16 pb-12 lg:pb-16">
+        <div className="lg:grid lg:grid-cols-2 lg:items-end gap-8">
+          {/* Left Column */}
+          <div className="text-left space-y-5">
+            <AnimatedHeading text="Shaping tomorrow\nwith vision and action." />
+            
+            <FadeIn delay={800} duration={1000}>
+              <p className="text-base md:text-lg text-gray-300">
+                We back visionaries and craft ventures that define what comes next.
+              </p>
+            </FadeIn>
+
+            <FadeIn delay={1200} duration={1000}>
+              <div className="flex flex-wrap gap-4 pt-2">
+                <button 
+                  onClick={() => {
+                    setIsBatchMode(false);
+                    setIsModalOpen(true);
+                  }}
+                  className="bg-white text-black px-8 py-3 rounded-lg font-medium hover:bg-gray-100 transition-colors cursor-pointer"
+                >
+                  Single File Converter
+                </button>
+                <button 
+                  onClick={() => {
+                    setIsBatchMode(true);
+                    setIsModalOpen(true);
+                  }}
+                  className="liquid-glass border border-white/20 text-white px-8 py-3 rounded-lg font-medium hover:bg-white hover:text-black transition-all cursor-pointer"
+                >
+                  Batch Converter (Keep Names)
+                </button>
+              </div>
+            </FadeIn>
+          </div>
+
+          {/* Right Column */}
+          <div className="flex items-end justify-start lg:justify-end mt-8 lg:mt-0">
+            <FadeIn delay={1400} duration={1000}>
+              <div className="liquid-glass border border-white/20 px-6 py-3 rounded-xl">
+                <span className="text-lg md:text-xl lg:text-2xl font-light text-white whitespace-nowrap">
+                  Investing. Building. Advisory.
+                </span>
+              </div>
+            </FadeIn>
+          </div>
         </div>
       </main>
-
-      {/* SOCIAL ICONS FOOTER */}
-      <footer className="relative z-10 flex justify-center gap-4 pb-12">
-        <a 
-          href="https://instagram.com" 
-          target="_blank" 
-          rel="noopener noreferrer"
-          aria-label="Instagram" 
-          className="liquid-glass rounded-full p-4 text-white/80 hover:text-white hover:bg-white/5 transition-all flex items-center justify-center cursor-pointer"
-        >
-          <Instagram className="w-5 h-5" />
-        </a>
-        <a 
-          href="https://twitter.com" 
-          target="_blank" 
-          rel="noopener noreferrer"
-          aria-label="Twitter" 
-          className="liquid-glass rounded-full p-4 text-white/80 hover:text-white hover:bg-white/5 transition-all flex items-center justify-center cursor-pointer"
-        >
-          <Twitter className="w-5 h-5" />
-        </a>
-        <a 
-          href="https://asme.com" 
-          target="_blank" 
-          rel="noopener noreferrer"
-          aria-label="Globe" 
-          className="liquid-glass rounded-full p-4 text-white/80 hover:text-white hover:bg-white/5 transition-all flex items-center justify-center cursor-pointer"
-        >
-          <Globe className="w-5 h-5" />
-        </a>
-      </footer>
 
       {/* LUNA PLAYABLE CONVERTER MODAL */}
       {isModalOpen && (
