@@ -804,8 +804,8 @@ export default function Home() {
 
       {/* LUNA PLAYABLE CONVERTER MODAL */}
       {isModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-md overflow-y-auto">
-          <div className="relative liquid-glass rounded-3xl p-6 sm:p-8 max-w-4xl w-full text-white animate-fade-in-up space-y-6 max-h-[90vh] overflow-y-auto shadow-2xl">
+        <div className="fixed inset-0 z-50 flex items-start justify-center p-4 bg-black/70 backdrop-blur-md overflow-y-auto">
+          <div className="relative liquid-glass rounded-3xl p-6 sm:p-8 max-w-4xl w-full text-white animate-fade-in-up space-y-6 shadow-2xl my-auto">
             {/* Close Button */}
             <button 
               onClick={() => setIsModalOpen(false)}
@@ -816,7 +816,7 @@ export default function Home() {
             </button>
 
             {/* Modal Title and Mode Toggle */}
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-white/10 pb-4">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-white/10 pb-4 pr-10 sm:pr-0">
               <div>
                 <h2 className="text-2xl font-bold flex items-center gap-2">
                   {isBatchMode ? (
