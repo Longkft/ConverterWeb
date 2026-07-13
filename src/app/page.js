@@ -424,7 +424,7 @@ export default function Home() {
 
         // Generate Filename
         const cleanNetworkName = net.name.replace(/[^a-zA-Z0-9]/g, '');
-        const baseFilename = `${game}_${pa}_${level}_${cleanNetworkName}`;
+        const baseFilename = `${cleanNetworkName}_${game}_${pa}_${level}`;
 
         // Add to zip structure
         if (net.zip) {
