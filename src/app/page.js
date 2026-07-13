@@ -78,12 +78,12 @@ function FadeIn({ children, delay = 0, duration = 1000 }) {
 }
 
 function AnimatedHeading({ text }) {
-  const charDelay = 120; // delay between character cycles for smooth waves
+  const charDelay = 80; // delay between characters in ms for a sleek LED wave
   const lines = text.includes('\\n') ? text.split('\\n') : text.split('\n');
   
   return (
     <h1 
-      className="text-3xl sm:text-4xl md:text-5xl lg:text-6xl xl:text-7xl font-bold mb-4 leading-tight text-center text-white" 
+      className="text-3xl sm:text-4xl md:text-5xl lg:text-6xl xl:text-7xl font-bold mb-4 leading-tight text-center" 
       style={{ letterSpacing: '-0.04em' }}
     >
       {lines.map((line, lineIndex) => {
@@ -102,7 +102,7 @@ function AnimatedHeading({ text }) {
               return (
                 <span
                   key={charIndex}
-                  className="char-glow-wave"
+                  className="char-led-sweep"
                   style={{
                     animationDelay: `${delay}ms`
                   }}

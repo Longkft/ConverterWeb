@@ -53,19 +53,24 @@ body {
   animation: fadeInUp 0.5s ease-out forwards;
 }
 
-.char-glow-wave {
+.char-led-sweep {
   display: inline-block;
-  animation: glowWave 4s ease-in-out infinite;
+  color: #404040;
+  animation: ledSweep 3.2s ease-in-out infinite;
 }
 
-@keyframes glowWave {
-  0%, 100% {
+@keyframes ledSweep {
+  0% {
     color: #ffffff;
-    text-shadow: 0 0 2px rgba(255, 255, 255, 0.1);
+    text-shadow: 0 0 10px rgba(255, 255, 255, 0.45);
   }
-  50% {
-    color: #8c8c8c;
-    text-shadow: 0 0 10px rgba(255, 255, 255, 0.35);
+  6% {
+    color: #ffffff;
+    text-shadow: 0 0 10px rgba(255, 255, 255, 0.45);
+  }
+  10%, 100% {
+    color: #404040;
+    text-shadow: none;
   }
 }
 
