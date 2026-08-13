@@ -457,7 +457,10 @@ export default function Home() {
         // BATCH MODE: One ZIP per HTML file, all bundled into one master ZIP
         const masterZip = new JSZip();
 
-        const CONCURRENCY_LIMIT = 4;
+        // Dynamic CPU concurrency (utilizes available CPU cores, default 8-10 parallel files)
+        const CONCURRENCY_LIMIT = (typeof navigator !== 'undefined' && navigator.hardwareConcurrency) 
+          ? Math.min(Math.max(navigator.hardwareConcurrency, 8), 16) 
+          : 8;
         const totalBatchFiles = filesToProcess.length;
         let processedCount = 0;
 
