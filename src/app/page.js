@@ -329,6 +329,7 @@ export default function Home() {
   const [logs, setLogs] = useState(['Waiting for file...']);
   const [showLogs, setShowLogs] = useState(false);
   const [isConverting, setIsConverting] = useState(false);
+  const [lastZipResult, setLastZipResult] = useState(null);
 
   // --- UI & MODAL STATE ---
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -795,6 +796,11 @@ export default function Home() {
         }
 
         addLog(`Finalizing master bundle package...`);
+        setLastZipResult({
+          type: 'stream',
+          writer: streamWriter,
+          filename: 'Converted_Playables.zip'
+        });
         await triggerZipSave(streamWriter, 'Converted_Playables.zip', addLog);
       } else {
         // SINGLE FILE MODE (exactly as before)
@@ -954,12 +960,28 @@ export default function Home() {
         });
 
         saveAs(masterZipContent, `${game}_${pa}_${level}.zip`);
+        setLastZipResult({
+          type: 'blob',
+          blob: masterZipContent,
+          filename: `${game}_${pa}_${level}.zip`
+        });
         addLog(`✓ Done! Download triggered.`);
       } } catch (err) {
       addLog(`❌ Error: ${err.message}`);
       console.error(err);
     } finally {
       setIsConverting(false);
+    }
+  };
+
+  const handleRedownload = async () => {
+    if (!lastZipResult) return;
+    addLog(`Re-download requested for ${lastZipResult.filename}...`);
+    if (lastZipResult.type === 'stream' && lastZipResult.writer) {
+      await triggerZipSave(lastZipResult.writer, lastZipResult.filename, addLog);
+    } else if (lastZipResult.type === 'blob' && lastZipResult.blob) {
+      saveAs(lastZipResult.blob, lastZipResult.filename);
+      addLog(`✓ Done! Re-download triggered for ${lastZipResult.filename}`);
     }
   };
 
@@ -1380,6 +1402,18 @@ export default function Home() {
                       </>
                     )}
                   </button>
+
+                  {/* Re-download Button */}
+                  {lastZipResult && (
+                    <button 
+                      onClick={handleRedownload}
+                      disabled={isConverting}
+                      className="w-full py-3 px-4 bg-emerald-500/20 hover:bg-emerald-500/30 border border-emerald-500/40 text-emerald-300 rounded-xl font-bold flex items-center justify-center space-x-2 transition-all cursor-pointer shadow-lg hover:scale-[1.01] active:scale-[0.99] animate-fade-in-up"
+                    >
+                      <Download className="w-4 h-4 text-emerald-400 animate-bounce" />
+                      <span>Re-download ZIP ({lastZipResult.filename})</span>
+                    </button>
+                  )}
 
                   {/* Terminal Console Logs */}
                   {showLogs && (
