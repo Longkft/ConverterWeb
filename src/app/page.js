@@ -575,18 +575,25 @@ export default function Home() {
 
     try {
       if (isBatchMode) {
-        // BATCH MODE: Stream chunks to Blob using zero-overhead StreamingZipWriter
+        // BATCH MODE: Multi-threaded parallel stream chunks to Blob using zero-overhead StreamingZipWriter
         const streamWriter = new StreamingZipWriter();
+        const CONCURRENCY_LIMIT = (typeof navigator !== 'undefined' && navigator.hardwareConcurrency)
+          ? Math.min(Math.max(navigator.hardwareConcurrency, 4), 16)
+          : 4;
         const totalBatchFiles = filesToProcess.length;
+        let processedCount = 0;
 
-        for (let idx = 0; idx < totalBatchFiles; idx++) {
-          const fileItem = filesToProcess[idx];
-          let fileContent = await getFileContent(fileItem);
-          const originalBaseName = fileItem.name.replace(/\.[^/.]+$/, "");
-          
-          addLog(`[${idx + 1}/${totalBatchFiles}] Processing ${fileItem.name}...`);
-          const fileZip = new JSZip();
-          const fileZipPromises = [];
+        for (let i = 0; i < totalBatchFiles; i += CONCURRENCY_LIMIT) {
+          const chunk = filesToProcess.slice(i, i + CONCURRENCY_LIMIT);
+
+          await Promise.all(chunk.map(async (fileItem, chunkIdx) => {
+            const fileIndex = i + chunkIdx;
+            let fileContent = await getFileContent(fileItem);
+            const originalBaseName = fileItem.name.replace(/\.[^/.]+$/, "");
+            
+            addLog(`[${fileIndex + 1}/${totalBatchFiles}] Processing ${fileItem.name}...`);
+            const fileZip = new JSZip();
+            const fileZipPromises = [];
 
             selectedNetworks.forEach(net => {
               let newContent = fileContent;
@@ -737,8 +744,10 @@ export default function Home() {
             });
             
             streamWriter.addFile(`${originalBaseName}.zip`, fileZipUint8);
-            addLog(`✓ [${idx + 1}/${totalBatchFiles}] Packaged ${originalBaseName}.zip into master bundle.`);
-          }
+            processedCount++;
+            addLog(`✓ [${processedCount}/${totalBatchFiles}] Packaged ${originalBaseName}.zip into master bundle.`);
+          }));
+        }
 
         addLog(`Finalizing master bundle package...`);
         const masterZipBlob = streamWriter.finalizeBlob();
