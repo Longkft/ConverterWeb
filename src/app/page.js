@@ -264,21 +264,34 @@ export default function Home() {
   // --- DRAG AND DROP HANDLERS ---
   const handleDragOver = (e) => {
     e.preventDefault();
+    e.stopPropagation();
     setIsDragging(true);
   };
 
-  const handleDragLeave = () => {
+  const handleDragLeave = (e) => {
+    if (e) {
+      e.preventDefault();
+      e.stopPropagation();
+    }
     setIsDragging(false);
   };
 
   const handleDrop = (e) => {
     e.preventDefault();
+    e.stopPropagation();
     setIsDragging(false);
     if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
-      if (isBatchMode) {
-        processMultipleFiles(e.dataTransfer.files);
+      const files = e.dataTransfer.files;
+      const htmlFiles = Array.from(files).filter(f => f.name.toLowerCase().endsWith('.html'));
+      if (htmlFiles.length === 0) {
+        alert('Please select valid HTML files.');
+        return;
+      }
+      if (htmlFiles.length > 1 || isBatchMode) {
+        setIsBatchMode(true);
+        processMultipleFiles(htmlFiles);
       } else {
-        processFile(e.dataTransfer.files[0]);
+        processFile(htmlFiles[0]);
       }
     }
   };
@@ -310,28 +323,40 @@ export default function Home() {
     reader.readAsText(file);
   };
 
+  const getFileContent = async (fileItem) => {
+    if (fileItem.content) return fileItem.content;
+    if (fileItem.file && typeof fileItem.file.text === 'function') {
+      return await fileItem.file.text();
+    }
+    if (fileItem.file) {
+      return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = (e) => resolve(e.target.result);
+        reader.onerror = (e) => reject(e);
+        reader.readAsText(fileItem.file);
+      });
+    }
+    return '';
+  };
+
   const processMultipleFiles = async (files) => {
     const newFiles = [];
-    const promises = Array.from(files).map(file => {
-      if (!file.name.toLowerCase().endsWith('.html')) {
-        return Promise.resolve();
-      }
-      return new Promise(resolve => {
-        const reader = new FileReader();
-        reader.onload = (e) => {
-          newFiles.push({
-            name: file.name,
-            size: (file.size / 1024 / 1024).toFixed(2),
-            content: e.target.result
-          });
-          resolve();
-        };
-        reader.readAsText(file);
+    const htmlFiles = Array.from(files).filter(file => file.name.toLowerCase().endsWith('.html'));
+    for (const file of htmlFiles) {
+      newFiles.push({
+        name: file.name,
+        size: (file.size / 1024 / 1024).toFixed(2),
+        file: file,
+        content: null
       });
-    });
-    await Promise.all(promises);
+    }
     if (newFiles.length > 0) {
-      setUploadedFilesList(prev => [...prev, ...newFiles]);
+      setUploadedFilesList(prev => {
+        const existingKeys = new Set(prev.map(f => `${f.name}_${f.size}`));
+        const uniqueNewFiles = newFiles.filter(f => !existingKeys.has(`${f.name}_${f.size}`));
+        if (uniqueNewFiles.length === 0) return prev;
+        return [...prev, ...uniqueNewFiles];
+      });
       addLog(`Added ${newFiles.length} file(s) for batch processing.`);
     }
   };
@@ -339,15 +364,21 @@ export default function Home() {
   // --- GLOBAL DRAG AND DROP (FOR USER EXPERIENCE) ---
   const handleGlobalDragOver = (e) => {
     e.preventDefault();
+    e.stopPropagation();
     setIsGlobalDragging(true);
   };
 
-  const handleGlobalDragLeave = () => {
+  const handleGlobalDragLeave = (e) => {
+    if (e) {
+      e.preventDefault();
+      e.stopPropagation();
+    }
     setIsGlobalDragging(false);
   };
 
   const handleGlobalDrop = (e) => {
     e.preventDefault();
+    e.stopPropagation();
     setIsGlobalDragging(false);
     if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
       const files = e.dataTransfer.files;
@@ -358,7 +389,7 @@ export default function Home() {
       }
       
       setIsModalOpen(true);
-      if (htmlFiles.length > 1) {
+      if (htmlFiles.length > 1 || isBatchMode) {
         setIsBatchMode(true);
         processMultipleFiles(htmlFiles);
       } else {
@@ -426,8 +457,11 @@ export default function Home() {
         // BATCH MODE: One ZIP per HTML file, all bundled into one master ZIP
         const masterZip = new JSZip();
 
-        for (const fileItem of filesToProcess) {
-          const fileContent = fileItem.content;
+        const totalBatchFiles = filesToProcess.length;
+        for (let idx = 0; idx < totalBatchFiles; idx++) {
+          const fileItem = filesToProcess[idx];
+          let fileContent = await getFileContent(fileItem);
+          addLog(`[${idx + 1}/${totalBatchFiles}] Processing ${fileItem.name}...`);
           const originalBaseName = fileItem.name.replace(/\.[^/.]+$/, "");
           
           addLog(`Creating ZIP package for ${fileItem.name}...`);
@@ -561,8 +595,12 @@ export default function Home() {
             if (net.zip) {
               const innerZip = new JSZip();
               innerZip.file('index.html', newContent);
-              const innerZipPromise = innerZip.generateAsync({ type: "blob" }).then(blob => {
-                fileZip.file(`${baseFilename}.zip`, blob);
+              const innerZipPromise = innerZip.generateAsync({ 
+                type: "uint8array",
+                compression: "DEFLATE",
+                compressionOptions: { level: 6 }
+              }).then(uint8 => {
+                fileZip.file(`${baseFilename}.zip`, uint8);
                 addLog(`  Created ${baseFilename}.zip`);
               });
               fileZipPromises.push(innerZipPromise);
@@ -573,16 +611,26 @@ export default function Home() {
           });
 
           await Promise.all(fileZipPromises);
+          fileContent = null;
+          
           addLog(`Zipping package for ${originalBaseName}...`);
-          const fileZipBlob = await fileZip.generateAsync({ type: "blob" });
-          masterZip.file(`${originalBaseName}.zip`, fileZipBlob);
+          const fileZipUint8 = await fileZip.generateAsync({ 
+            type: "uint8array",
+            compression: "DEFLATE",
+            compressionOptions: { level: 6 }
+          });
+          masterZip.file(`${originalBaseName}.zip`, fileZipUint8);
           addLog(`✓ Packaged ${originalBaseName}.zip into master bundle.`);
         }
 
-        addLog(`Creating master bundle package...`);
-        const masterZipContent = await masterZip.generateAsync({ type: "blob" });
+        addLog(`Compressing and generating master bundle...`);
+        const masterZipContent = await masterZip.generateAsync({ 
+          type: "blob",
+          compression: "DEFLATE",
+          compressionOptions: { level: 6 }
+        });
         saveAs(masterZipContent, 'Converted_Playables.zip');
-        addLog(`✓ Done! Download triggered.`);
+        addLog(`✓ Done! Single download triggered.`);
       } else {
         // SINGLE FILE MODE (exactly as before)
         const fileItem = filesToProcess[0];
@@ -716,8 +764,12 @@ export default function Home() {
           if (net.zip) {
             const innerZip = new JSZip();
             innerZip.file('index.html', newContent);
-            const innerZipPromise = innerZip.generateAsync({ type: "blob" }).then(blob => {
-              zip.file(`${baseFilename}.zip`, blob);
+            const innerZipPromise = innerZip.generateAsync({ 
+              type: "uint8array",
+              compression: "DEFLATE",
+              compressionOptions: { level: 6 }
+            }).then(uint8 => {
+              zip.file(`${baseFilename}.zip`, uint8);
               addLog(`Created ${baseFilename}.zip`);
             });
             zipPromises.push(innerZipPromise);
@@ -730,7 +782,11 @@ export default function Home() {
         await Promise.all(zipPromises);
 
         addLog(`Zipping files... Please wait.`);
-        const masterZipContent = await zip.generateAsync({ type: "blob" });
+        const masterZipContent = await zip.generateAsync({ 
+          type: "blob",
+          compression: "DEFLATE",
+          compressionOptions: { level: 6 }
+        });
 
         saveAs(masterZipContent, `${game}_${pa}_${level}.zip`);
         addLog(`✓ Done! Download triggered.`);
