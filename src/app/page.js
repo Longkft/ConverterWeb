@@ -152,6 +152,7 @@ class StreamingZipWriter {
     this.centralDirectoryEntries = [];
     this.offset = 0;
     this.crcTable = this.makeCRCTable();
+    this.finalized = false;
   }
 
   makeCRCTable() {
@@ -216,7 +217,10 @@ class StreamingZipWriter {
     });
   }
 
-  finalizeBlob() {
+  finalizeChunks() {
+    if (this.finalized) return this.chunks;
+    this.finalized = true;
+
     const cdOffset = this.offset;
     let cdSize = 0;
 
@@ -261,10 +265,51 @@ class StreamingZipWriter {
     view.setUint16(20, 0, true);
 
     this.chunks.push(eocd);
+    return this.chunks;
+  }
 
-    return new Blob(this.chunks, { type: 'application/zip' });
+  finalizeBlob() {
+    const chunks = this.finalizeChunks();
+    return new Blob(chunks, { type: 'application/zip' });
   }
 }
+
+const triggerZipSave = async (streamWriter, defaultFilename, addLog) => {
+  const chunks = streamWriter.finalizeChunks();
+
+  // Try Native FileSystem API first (Chrome / Edge / Opera on Windows/Mac)
+  if (typeof window !== 'undefined' && 'showSaveFilePicker' in window) {
+    try {
+      const handle = await window.showSaveFilePicker({
+        suggestedName: defaultFilename,
+        types: [{
+          description: 'ZIP Archive (*.zip)',
+          accept: { 'application/zip': ['.zip'] }
+        }]
+      });
+      addLog(`Saving directly to disk... Please wait.`);
+      const writableStream = await handle.createWritable();
+
+      for (const chunk of chunks) {
+        await writableStream.write(chunk);
+      }
+      await writableStream.close();
+      addLog(`✓ Done! File saved directly to disk.`);
+      return;
+    } catch (err) {
+      if (err.name === 'AbortError') {
+        addLog(`Save cancelled by user.`);
+        return;
+      }
+      addLog(`Native save notice: ${err.message}. Using standard download...`);
+    }
+  }
+
+  // Fallback to Blob URL download
+  const masterZipBlob = new Blob(chunks, { type: 'application/zip' });
+  saveAs(masterZipBlob, defaultFilename);
+  addLog(`✓ Done! Single download triggered.`);
+};
 
 export default function Home() {
   // --- CORE LUNA CONVERTER STATE ---
@@ -750,9 +795,7 @@ export default function Home() {
         }
 
         addLog(`Finalizing master bundle package...`);
-        const masterZipBlob = streamWriter.finalizeBlob();
-        saveAs(masterZipBlob, 'Converted_Playables.zip');
-        addLog(`✓ Done! Single download triggered.`);
+        await triggerZipSave(streamWriter, 'Converted_Playables.zip', addLog);
       } else {
         // SINGLE FILE MODE (exactly as before)
         const fileItem = filesToProcess[0];
