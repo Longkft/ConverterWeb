@@ -145,6 +145,127 @@ const NETWORKS = [
   { id: 'youappi', name: 'YouAppi', abb: 'YA', zip: false }
 ];
 
+// --- LIGHTWEIGHT STREAMING ZIP WRITER (BYPASSES V8 2GB ARRAYBUFFER LIMIT) ---
+class StreamingZipWriter {
+  constructor() {
+    this.chunks = [];
+    this.centralDirectoryEntries = [];
+    this.offset = 0;
+    this.crcTable = this.makeCRCTable();
+  }
+
+  makeCRCTable() {
+    let c;
+    const table = new Uint32Array(256);
+    for (let n = 0; n < 256; n++) {
+      c = n;
+      for (let k = 0; k < 8; k++) {
+        c = (c & 1) ? (0xEDB88320 ^ (c >>> 1)) : (c >>> 1);
+      }
+      table[n] = c;
+    }
+    return table;
+  }
+
+  calcCRC32(buf) {
+    let crc = 0 ^ (-1);
+    for (let i = 0; i < buf.length; i++) {
+      crc = (crc >>> 8) ^ this.crcTable[(crc ^ buf[i]) & 0xFF];
+    }
+    return (crc ^ (-1)) >>> 0;
+  }
+
+  addFile(filename, uint8Data) {
+    const encoder = new TextEncoder();
+    const nameBytes = encoder.encode(filename);
+    const crc = this.calcCRC32(uint8Data);
+    const size = uint8Data.length;
+    const localHeaderOffset = this.offset;
+
+    const now = new Date();
+    const dosTime = (now.getHours() << 11) | (now.getMinutes() << 5) | (now.getSeconds() >> 1);
+    const dosDate = ((now.getFullYear() - 1980) << 9) | ((now.getMonth() + 1) << 5) | now.getDate();
+
+    const header = new Uint8Array(30 + nameBytes.length);
+    const view = new DataView(header.buffer);
+    
+    view.setUint32(0, 0x04034b50, true);
+    view.setUint16(4, 20, true);
+    view.setUint16(6, 0, true);
+    view.setUint16(8, 0, true); // STORE
+    view.setUint16(10, dosTime, true);
+    view.setUint16(12, dosDate, true);
+    view.setUint32(14, crc, true);
+    view.setUint32(18, size, true);
+    view.setUint32(22, size, true);
+    view.setUint16(26, nameBytes.length, true);
+    view.setUint16(28, 0, true);
+    header.set(nameBytes, 30);
+
+    this.chunks.push(header);
+    this.chunks.push(uint8Data);
+    this.offset += header.length + size;
+
+    this.centralDirectoryEntries.push({
+      filenameBytes: nameBytes,
+      crc,
+      size,
+      dosTime,
+      dosDate,
+      offset: localHeaderOffset
+    });
+  }
+
+  finalizeBlob() {
+    const cdOffset = this.offset;
+    let cdSize = 0;
+
+    for (const entry of this.centralDirectoryEntries) {
+      const cdHeader = new Uint8Array(46 + entry.filenameBytes.length);
+      const view = new DataView(cdHeader.buffer);
+
+      view.setUint32(0, 0x02014b50, true);
+      view.setUint16(4, 20, true);
+      view.setUint16(6, 20, true);
+      view.setUint16(8, 0, true);
+      view.setUint16(10, 0, true); // STORE
+      view.setUint16(12, entry.dosTime, true);
+      view.setUint16(14, entry.dosDate, true);
+      view.setUint32(16, entry.crc, true);
+      view.setUint32(20, entry.size, true);
+      view.setUint32(24, entry.size, true);
+      view.setUint16(28, entry.filenameBytes.length, true);
+      view.setUint16(30, 0, true);
+      view.setUint16(32, 0, true);
+      view.setUint16(34, 0, true);
+      view.setUint16(36, 0, true);
+      view.setUint32(38, 0, true);
+      view.setUint32(42, entry.offset, true);
+
+      cdHeader.set(entry.filenameBytes, 46);
+      this.chunks.push(cdHeader);
+      cdSize += cdHeader.length;
+    }
+
+    const eocd = new Uint8Array(22);
+    const view = new DataView(eocd.buffer);
+    const totalEntries = this.centralDirectoryEntries.length;
+
+    view.setUint32(0, 0x06054b50, true);
+    view.setUint16(4, 0, true);
+    view.setUint16(6, 0, true);
+    view.setUint16(8, totalEntries, true);
+    view.setUint16(10, totalEntries, true);
+    view.setUint32(12, cdSize, true);
+    view.setUint32(16, cdOffset, true);
+    view.setUint16(20, 0, true);
+
+    this.chunks.push(eocd);
+
+    return new Blob(this.chunks, { type: 'application/zip' });
+  }
+}
+
 export default function Home() {
   // --- CORE LUNA CONVERTER STATE ---
   const [gameName, setGameName] = useState('');
@@ -454,27 +575,18 @@ export default function Home() {
 
     try {
       if (isBatchMode) {
-        // BATCH MODE: One ZIP per HTML file, all bundled into one master ZIP
-        const masterZip = new JSZip();
-
-        // Dynamic CPU concurrency (utilizes available CPU cores, default 8-10 parallel files)
-        const CONCURRENCY_LIMIT = (typeof navigator !== 'undefined' && navigator.hardwareConcurrency) 
-          ? Math.min(Math.max(navigator.hardwareConcurrency, 8), 16) 
-          : 8;
+        // BATCH MODE: Stream chunks to Blob using zero-overhead StreamingZipWriter
+        const streamWriter = new StreamingZipWriter();
         const totalBatchFiles = filesToProcess.length;
-        let processedCount = 0;
 
-        for (let i = 0; i < totalBatchFiles; i += CONCURRENCY_LIMIT) {
-          const chunk = filesToProcess.slice(i, i + CONCURRENCY_LIMIT);
-
-          await Promise.all(chunk.map(async (fileItem, chunkIdx) => {
-            const fileIndex = i + chunkIdx;
-            let fileContent = await getFileContent(fileItem);
-            const originalBaseName = fileItem.name.replace(/\.[^/.]+$/, "");
-            
-            addLog(`[${fileIndex + 1}/${totalBatchFiles}] Processing ${fileItem.name}...`);
-            const fileZip = new JSZip();
-            const fileZipPromises = [];
+        for (let idx = 0; idx < totalBatchFiles; idx++) {
+          const fileItem = filesToProcess[idx];
+          let fileContent = await getFileContent(fileItem);
+          const originalBaseName = fileItem.name.replace(/\.[^/.]+$/, "");
+          
+          addLog(`[${idx + 1}/${totalBatchFiles}] Processing ${fileItem.name}...`);
+          const fileZip = new JSZip();
+          const fileZipPromises = [];
 
             selectedNetworks.forEach(net => {
               let newContent = fileContent;
@@ -623,19 +735,14 @@ export default function Home() {
               compression: "DEFLATE",
               compressionOptions: { level: 1 }
             });
-            masterZip.file(`${originalBaseName}.zip`, fileZipUint8);
-            processedCount++;
-            addLog(`✓ [${processedCount}/${totalBatchFiles}] Packaged ${originalBaseName}.zip into master bundle.`);
-          }));
-        }
+            
+            streamWriter.addFile(`${originalBaseName}.zip`, fileZipUint8);
+            addLog(`✓ [${idx + 1}/${totalBatchFiles}] Packaged ${originalBaseName}.zip into master bundle.`);
+          }
 
-        addLog(`Compressing and generating master bundle...`);
-        const masterZipContent = await masterZip.generateAsync({ 
-          type: "blob",
-          compression: "DEFLATE",
-          compressionOptions: { level: 1 }
-        });
-        saveAs(masterZipContent, 'Converted_Playables.zip');
+        addLog(`Finalizing master bundle package...`);
+        const masterZipBlob = streamWriter.finalizeBlob();
+        saveAs(masterZipBlob, 'Converted_Playables.zip');
         addLog(`✓ Done! Single download triggered.`);
       } else {
         // SINGLE FILE MODE (exactly as before)
